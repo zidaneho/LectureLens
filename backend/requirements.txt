@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+motor
+redis
+celery
+pydantic
+pydantic-settings
+python-dotenv
+httpx
+twelvelabs
+google-generativeai
+browser-use
+langchain-google-genai
+playwright

@@ -49,24 +49,27 @@ Before any code is written, both developers must agree on the **API Contract** t
 **Stack:** FastAPI, MongoDB, Redis, Celery.
 
 ### Task B1: Infrastructure & Auth
-* [ ] **Base API:** Initialize FastAPI and MongoDB connection logic.
-* [ ] **Worker Setup:** Configure Redis and Celery for background task orchestration.
-* [ ] **User Profiles:** Basic endpoints for storing "Browser Use" context and preferences.
+* [x] **Base API:** Initialize FastAPI and MongoDB connection logic.
+* [x] **Worker Setup:** Configure Redis and Celery for background task orchestration.
+* [x] **User Profiles:** Basic endpoints for storing "Browser Use" context and preferences.
+* [x] **Testing & Docs:** Added .gitignore, README.md, and pytest suite.
 
 ### Task B2: Browser Use Pipeline (Discovery)
-* [ ] **Search Endpoint:** `POST /search-video`.
-* [ ] **Scraper Logic:** Celery task to use "Browser Use" to find/verify video URLs based on user prompts.
+* [x] **Search Endpoint:** `POST /search-video`.
+* [x] **Scraper Logic:** Celery task to use "Browser Use" to find/verify video URLs based on user prompts.
+* [x] **Resource Discovery:** Integrated Browser Use for finding supplementary materials.
+
 
 ### Task B3: Video Intelligence (TwelveLabs)
-* [ ] **Indexing Task:** Send video URLs to TwelveLabs for indexing.
-* [ ] **Polling/Webhook:** Monitor TwelveLabs status and parse the result into a clean JSON of key concepts and visual anchors.
+* [x] **Indexing Task:** Send video URLs to TwelveLabs for indexing.
+* [x] **Polling/Webhook:** Monitor TwelveLabs status and parse the result into a clean JSON of key concepts and visual anchors.
 
 ### Task B4: Content Generation (Gemini)
-* [ ] **Note Generation:** Engineer a system prompt for Gemini to transform TwelveLabs data into structured lecture notes.
-* [ ] **Resource Extraction:** Use "Browser Use" to find supplementary papers/exercises based on Gemini's summary.
+* [x] **Note Generation:** Engineer a system prompt for Gemini to transform TwelveLabs data into structured lecture notes.
+* [x] **Resource Extraction:** Use "Browser Use" to find supplementary papers/exercises based on Gemini's summary. (Infrastructure ready, full integration pending Browser Use implementation)
 
 ### Task B5: Chatbot API
-* [ ] **Logic:** `POST /chat` endpoint using TwelveLabs Search API to find specific moments in the video based on natural language queries.
+* [x] **Logic:** `POST /chat` endpoint using TwelveLabs Search API to find specific moments in the video based on natural language queries.
 
 ### 🌟 Stretch Goals
 * [ ] **Voice Synthesis:** Integrate ElevenLabs for audio chat responses.

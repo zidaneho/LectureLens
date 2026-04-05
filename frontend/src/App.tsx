@@ -1,8 +1,10 @@
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Landing from './pages/Landing';
 import AnalysisView from './pages/AnalysisView';
 import Dashboard from './pages/Dashboard';
 import MainLayout from './components/MainLayout';
+import './App.css';
 
 function App() {
   return (

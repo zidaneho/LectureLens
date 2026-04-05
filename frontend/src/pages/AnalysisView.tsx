@@ -1,42 +1,106 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Loader2, CheckCircle2, Clock, BookOpen, MessageSquare, Play, 
-  ExternalLink, ChevronRight, Share2, Download, X, Sparkles
+  ExternalLink, ChevronRight, Share2, Download, X, Sparkles, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactPlayer from 'react-player';
 import ReactMarkdown from 'react-markdown';
-import { mockVideoData } from '../mockVideoData';
 import ChatComponent from '../components/ChatComponent';
+import type { VideoData } from '../types';
 
-type Status = 'searching' | 'processing' | 'generating' | 'ready';
+const API_BASE_URL = 'http://localhost:8000/api';
+
+type Status = 'searching' | 'processing' | 'generating' | 'ready' | 'failed';
 
 const AnalysisView: React.FC = () => {
   const location = useLocation();
-  const prompt = location.state?.prompt || 'Loading...';
+  const navigate = useNavigate();
+  const prompt = location.state?.prompt;
+  
   const [status, setStatus] = useState<Status>('searching');
-  const [progress, setProgress] = useState(10);
+  const [progress, setProgress] = useState(0);
   const [activeTab, setActiveTab] = useState<'notes' | 'video'>('video');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [videoData, setVideoData] = useState<VideoData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  
   const playerRef = useRef<any>(null);
 
+  // Redirect if no prompt
   useEffect(() => {
-    const timer = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(timer);
-          setStatus('ready');
-          return 100;
-        }
-        if (prev > 70) setStatus('generating');
-        else if (prev > 30) setStatus('processing');
-        return prev + Math.random() * 10;
-      });
-    }, 500);
+    if (!prompt) {
+      navigate('/');
+    }
+  }, [prompt, navigate]);
 
-    return () => clearInterval(timer);
-  }, []);
+  // Step 1: Initiate search
+  useEffect(() => {
+    const initiateSearch = async () => {
+      if (!prompt) return;
+      
+      try {
+        const response = await fetch(`${API_BASE_URL}/search-video`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt }),
+        });
+        
+        if (!response.ok) throw new Error('Failed to initiate search');
+        
+        const data = await response.json();
+        setTaskId(data.task_id);
+      } catch (err: any) {
+        setError(err.message);
+        setStatus('failed');
+      }
+    };
+
+    initiateSearch();
+  }, [prompt]);
+
+  // Step 2: Poll for status
+  useEffect(() => {
+    let interval: number;
+    
+    if (taskId && status !== 'ready' && status !== 'failed') {
+      interval = setInterval(async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/task-status/${taskId}`);
+          if (!response.ok) throw new Error('Failed to fetch status');
+          
+          const data = await response.json();
+          
+          // Map backend stages to frontend status
+          if (data.stage === 'searching_video') setStatus('searching');
+          else if (data.stage === 'processing_video') setStatus('processing');
+          else if (data.stage === 'generating_notes') setStatus('generating');
+          
+          setProgress(data.progress || 0);
+          
+          if (data.status === 'completed') {
+            setVideoData(data.result);
+            setStatus('ready');
+            setTaskId(null);
+            clearInterval(interval);
+          } else if (data.status === 'failed') {
+            setError(data.message || 'Processing failed');
+            setStatus('failed');
+            setTaskId(null);
+            clearInterval(interval);
+          }
+        } catch (err: any) {
+          setError(err.message);
+          setStatus('failed');
+          clearInterval(interval);
+        }
+      }, 2000);
+    }
+    
+    return () => clearInterval(interval);
+  }, [taskId, status]);
 
   const handleSeek = (seconds: number) => {
     playerRef.current?.seekTo(seconds, 'seconds');
@@ -57,7 +121,27 @@ const AnalysisView: React.FC = () => {
     { id: 'ready', label: 'Ready!', icon: CheckCircle2 },
   ];
 
-  if (status !== 'ready') {
+  if (status === 'failed') {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black text-center space-y-6">
+        <div className="bg-white p-3 rounded-full">
+          <AlertCircle className="w-8 h-8 text-black" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-xl font-bold text-white tracking-tight">Something went wrong</h2>
+          <p className="text-neutral-500 text-sm max-w-xs mx-auto">{error}</p>
+        </div>
+        <button 
+          onClick={() => navigate('/')}
+          className="bg-white text-black px-6 py-3 rounded-xl font-bold transition-all hover:bg-neutral-200"
+        >
+          Try Another Prompt
+        </button>
+      </div>
+    );
+  }
+
+  if (status !== 'ready' || !videoData) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black">
         <div className="max-w-md w-full space-y-10">
@@ -124,6 +208,9 @@ const AnalysisView: React.FC = () => {
             </button>
           </div>
           <div className="flex items-center gap-1">
+            <div className="text-[10px] font-mono text-neutral-700 mr-2 hidden md:block select-all bg-neutral-950 px-2 py-1 rounded border border-white/5 max-w-[200px] truncate">
+              {videoData.video_url}
+            </div>
             <button className="p-1.5 text-neutral-600 hover:text-white transition-colors"><Share2 className="w-3.5 h-3.5" /></button>
             <button className="p-1.5 text-neutral-600 hover:text-white transition-colors"><Download className="w-3.5 h-3.5" /></button>
             <button 
@@ -148,16 +235,24 @@ const AnalysisView: React.FC = () => {
                 <div className="aspect-video w-full rounded-xl overflow-hidden bg-neutral-900 ring-1 ring-white/10">
                   <Player
                     ref={playerRef}
-                    url={mockVideoData.video_url}
+                    url={videoData.video_url}
                     width="100%"
                     height="100%"
                     controls
-                    playing
+                    config={{
+                      youtube: {
+                        playerVars: { 
+                          showinfo: 1,
+                          modestbranding: 1,
+                          rel: 0
+                        }
+                      }
+                    }}
                   />
                 </div>
                 
                 <div className="space-y-4">
-                  <h1 className="text-xl font-bold text-white tracking-tight">{mockVideoData.title}</h1>
+                  <h1 className="text-xl font-bold text-white tracking-tight">{videoData.title}</h1>
                   
                   <div className="space-y-3">
                     <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 flex items-center gap-2">
@@ -165,7 +260,7 @@ const AnalysisView: React.FC = () => {
                       Key Moments
                     </h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {mockVideoData.twelve_labs_data.key_concepts.map((concept, idx) => (
+                      {videoData.twelve_labs_data.key_concepts.map((concept, idx) => (
                         <button
                           key={idx}
                           onClick={() => handleSeek(concept.timestamp)}
@@ -193,7 +288,7 @@ const AnalysisView: React.FC = () => {
                 className="p-6 md:p-8 max-w-3xl mx-auto space-y-10"
               >
                 <div className="prose prose-invert prose-neutral prose-sm max-w-none prose-h1:text-white prose-h2:text-white prose-strong:text-white prose-headings:tracking-tight">
-                  <ReactMarkdown>{mockVideoData.lecture_notes.markdown_content}</ReactMarkdown>
+                  <ReactMarkdown>{videoData.lecture_notes.markdown_content}</ReactMarkdown>
                 </div>
 
                 <div className="space-y-4 pt-8 border-t border-white/10">
@@ -202,7 +297,7 @@ const AnalysisView: React.FC = () => {
                     Resources
                   </h3>
                   <div className="grid gap-2">
-                    {mockVideoData.lecture_notes.external_resources.map((res, idx) => (
+                    {videoData.lecture_notes.external_resources.map((res, idx) => (
                       <a 
                         key={idx}
                         href={res.url}
@@ -255,7 +350,7 @@ const AnalysisView: React.FC = () => {
               </button>
             </div>
             <div className="flex-1 overflow-hidden">
-              <ChatComponent onSeek={handleSeek} />
+              <ChatComponent videoId={videoData?.id || ''} onSeek={handleSeek} />
             </div>
           </motion.div>
         )}

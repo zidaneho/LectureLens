@@ -1,21 +1,21 @@
-export interface TranscriptSegment {
+export type TranscriptSegment = {
   start: number;
   end: number;
   text: string;
 }
 
-export interface KeyConcept {
+export type KeyConcept = {
   label: string;
   timestamp: number;
 }
 
-export interface ExternalResource {
+export type ExternalResource = {
   title: string;
   url: string;
   type: 'paper' | 'exercise' | 'article';
 }
 
-export interface VideoData {
+export type VideoData = {
   id: string;
   title: string;
   video_url: string;

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Send, Sparkles, User, Play } from 'lucide-react';
+import { Send, Sparkles, User, Play, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const API_BASE_URL = 'http://localhost:8000/api';
 
 interface Message {
   id: string;
@@ -10,11 +12,13 @@ interface Message {
 }
 
 interface ChatComponentProps {
+  videoId: string;
   onSeek: (seconds: number) => void;
 }
 
-const ChatComponent: React.FC<ChatComponentProps> = ({ onSeek }) => {
+const ChatComponent: React.FC<ChatComponentProps> = ({ videoId, onSeek }) => {
   const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -23,29 +27,48 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ onSeek }) => {
     }
   ]);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isTyping) return;
 
     const userMsg: Message = { id: Date.now().toString(), text: input, sender: 'user' };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+    setIsTyping(true);
 
-    setTimeout(() => {
-      let aiResponse: Message = {
+    try {
+      const response = await fetch(`${API_BASE_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          video_id: videoId,
+          message: input,
+          persona: 'default'
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to get response');
+
+      const data = await response.json();
+      
+      const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
-        text: "In the video, this is explained around the 1:30 mark.",
+        text: data.response_text,
         sender: 'ai',
-        timestamp: 90
+        timestamp: data.timestamp
       };
 
-      if (input.toLowerCase().includes('shor')) {
-        aiResponse.text = "Shor's algorithm is discussed starting at 2:30. It's a quantum algorithm for integer factorization.";
-        aiResponse.timestamp = 150;
-      }
-
       setMessages(prev => [...prev, aiResponse]);
-    }, 1000);
+    } catch (err: any) {
+      const errorMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        text: "Sorry, I'm having trouble connecting to the AI service right now.",
+        sender: 'ai'
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -74,7 +97,7 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ onSeek }) => {
                 msg.sender === 'user' ? 'bg-neutral-900 text-neutral-300' : 'bg-black border border-white/10 text-neutral-200'
               }`}>
                 {msg.text}
-                {msg.timestamp !== undefined && (
+                {msg.timestamp !== undefined && msg.timestamp !== null && (
                   <button
                     onClick={() => onSeek(msg.timestamp!)}
                     className="mt-3 flex items-center gap-2 px-3 py-1.5 bg-white text-black rounded-lg hover:bg-neutral-200 transition-all text-[10px] font-bold uppercase tracking-wider group"
@@ -86,6 +109,20 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ onSeek }) => {
               </div>
             </motion.div>
           ))}
+          {isTyping && (
+            <motion.div
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex gap-3"
+            >
+              <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 border bg-white border-white">
+                <Sparkles className="w-3.5 h-3.5 text-black" />
+              </div>
+              <div className="bg-black border border-white/10 p-3 rounded-xl">
+                <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
 
@@ -96,12 +133,13 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ onSeek }) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask a question..."
-            className="w-full bg-neutral-900/50 border border-white/10 rounded-xl px-4 py-3 pr-12 focus:ring-1 focus:ring-white/20 transition-all outline-none text-[13px] text-white placeholder:text-neutral-700"
+            disabled={isTyping}
+            className="w-full bg-neutral-900/50 border border-white/10 rounded-xl px-4 py-3 pr-12 focus:ring-1 focus:ring-white/20 transition-all outline-none text-[13px] text-white placeholder:text-neutral-700 disabled:opacity-50"
           />
           <button 
             type="submit"
             className="absolute right-2 top-1/2 -translate-y-1/2 bg-white p-2 rounded-lg hover:bg-neutral-200 transition-all disabled:opacity-30"
-            disabled={!input.trim()}
+            disabled={!input.trim() || isTyping}
           >
             <Send className="w-3.5 h-3.5 text-black" />
           </button>

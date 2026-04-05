@@ -3,7 +3,7 @@ import type { VideoData } from './types';
 export const mockVideoData: VideoData = {
   id: "video-123",
   title: "Introduction to Quantum Computing",
-  video_url: "https://www.youtube.com/watch?v=QuR7zbuMtgI",
+  video_url: "https://www.youtube.com/watch?v=k6U-i4gXJR8",
   twelve_labs_data: {
     transcript: [
       { start: 0, end: 15, text: "Welcome to this introduction to quantum computing." },

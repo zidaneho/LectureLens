@@ -5,7 +5,7 @@ export const mockVideoData: VideoData = {
   index_id: "index-123",
   video_id: "video-123-internal",
   title: "Introduction to Quantum Computing",
-  video_url: "https://www.youtube.com/watch?v=k6U-i4gXJR8",
+  video_url: "https://www.youtube.com/watch?v=qg9IMJKnIAA",
   twelve_labs_data: {
     transcript: [
       { start: 0, end: 15, text: "Welcome to this introduction to quantum computing." },

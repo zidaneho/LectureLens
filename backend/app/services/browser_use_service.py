@@ -20,7 +20,8 @@ class BrowserUseService:
             self.llm = None
         
         self.browser_profile = BrowserProfile(
-            headless=settings.BROWSER_USE_HEADLESS
+            headless=settings.BROWSER_USE_HEADLESS,
+            args=["--mute-audio"]
         )
 
     async def search_video(self, prompt: str) -> dict:

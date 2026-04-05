@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.chat import get_chat_service
+from app.services.eleven_labs import get_eleven_labs_service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -40,4 +42,33 @@ async def chat(request: ChatRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to process chat message: {str(e)}"
+        )
+
+
+@router.post("/tts")
+async def text_to_speech(request: dict):
+    """
+    Generate speech from text using ElevenLabs.
+    """
+    text = request.get("text")
+    api_key = request.get("api_key")
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+    
+    eleven_labs = get_eleven_labs_service()
+    
+    try:
+        # Generate speech generator
+        speech_gen = eleven_labs.generate_speech_stream(text, api_key=api_key)
+        
+        # Return as a streaming response
+        return StreamingResponse(
+            speech_gen,
+            media_type="audio/mpeg"
+        )
+    except Exception as e:
+        logger.error(f"TTS endpoint error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate speech: {str(e)}"
         )

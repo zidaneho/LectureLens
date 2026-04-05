@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Send, Sparkles, User, Play, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import VoiceButton from './VoiceButton';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
@@ -12,8 +13,8 @@ interface Message {
 }
 
 interface ChatComponentProps {
-  indexId: string;
-  videoId: string;
+  indexId?: string;
+  videoId?: string;
   onSeek: (seconds: number) => void;
 }
 
@@ -23,14 +24,16 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ indexId, videoId, onSeek 
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: "Hello! I've analyzed the video. Ask me anything, or click a cited moment to jump to that part of the lecture.",
+      text: "Hello! I'm preparing to analyze the video. Once indexing is complete, you can ask me anything about the content.",
       sender: 'ai'
     }
   ]);
 
+  const isReady = !!indexId && !!videoId;
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isTyping) return;
+    if (!input.trim() || isTyping || !isReady) return;
 
     const userMsg: Message = { id: Date.now().toString(), text: input, sender: 'user' };
     setMessages(prev => [...prev, userMsg]);
@@ -98,7 +101,13 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ indexId, videoId, onSeek 
               <div className={`max-w-[85%] p-3 rounded-xl text-[13px] leading-relaxed transition-all ${
                 msg.sender === 'user' ? 'bg-neutral-900 text-neutral-300' : 'bg-black border border-white/10 text-neutral-200'
               }`}>
-                {msg.text}
+                <div className="flex justify-between items-start gap-3">
+                  <div className="flex-1">{msg.text}</div>
+                  <VoiceButton 
+                    text={msg.text} 
+                    autoPlay={msg.sender === 'ai' && msg.id === messages[messages.length - 1].id && !isTyping} 
+                  />
+                </div>
                 {msg.timestamp !== undefined && msg.timestamp !== null && (
                   <button
                     onClick={() => onSeek(msg.timestamp!)}
@@ -134,14 +143,14 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ indexId, videoId, onSeek 
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask a question..."
-            disabled={isTyping}
+            placeholder={isReady ? "Ask a question..." : "Indexing video..."}
+            disabled={isTyping || !isReady}
             className="w-full bg-neutral-900/50 border border-white/10 rounded-xl px-4 py-3 pr-12 focus:ring-1 focus:ring-white/20 transition-all outline-none text-[13px] text-white placeholder:text-neutral-700 disabled:opacity-50"
           />
           <button 
             type="submit"
             className="absolute right-2 top-1/2 -translate-y-1/2 bg-white p-2 rounded-lg hover:bg-neutral-200 transition-all disabled:opacity-30"
-            disabled={!input.trim() || isTyping}
+            disabled={!input.trim() || isTyping || !isReady}
           >
             <Send className="w-3.5 h-3.5 text-black" />
           </button>

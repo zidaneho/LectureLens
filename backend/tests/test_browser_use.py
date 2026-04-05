@@ -8,6 +8,15 @@ def browser_service():
     return BrowserUseService(browser_use_api_key="dummy_key")
 
 @pytest.mark.asyncio
+async def test_browser_profile_initialization():
+    # Test that BrowserProfile is called with correct arguments
+    with patch("app.services.browser_use_service.BrowserProfile") as mock_profile_class:
+        service = BrowserUseService(browser_use_api_key="test_key")
+        mock_profile_class.assert_called_once()
+        args, kwargs = mock_profile_class.call_args
+        assert kwargs.get("args") == ["--mute-audio"]
+
+@pytest.mark.asyncio
 async def test_search_video_success(browser_service):
     # Mocking Agent and BrowserProfile
     with patch("app.services.browser_use_service.Agent") as mock_agent_class, \

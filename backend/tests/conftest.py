@@ -32,8 +32,30 @@ def mock_db_connection():
 def client():
     # We must import 'app' inside the fixture or after mocking to ensure it uses mocks if needed
     from main import app
+    from app.routes.user import get_current_user
+    
+    # Mock user for dependency injection
+    mock_user = {
+        "user_id": "default_user",
+        "email": "test@example.com",
+        "preferences": {
+            "persona": "Professor",
+            "summary_length": "medium",
+            "gemini_api_key": "test_gemini_key",
+            "twelve_labs_api_key": "test_twelve_labs_key"
+        }
+    }
+    
+    async def override_get_current_user():
+        return mock_user
+        
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    
     with TestClient(app) as c:
         yield c
+        
+    # Clean up overrides after test
+    app.dependency_overrides.clear()
 
 @pytest.fixture
 def mock_db():

@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 class TwelveLabsService:
     """Service for TwelveLabs API interactions using official SDK"""
     
-    def __init__(self):
-        self.api_key = settings.TWELVE_LABS_API_KEY
+    def __init__(self, api_key: str = settings.TWELVE_LABS_API_KEY):
+        self.api_key = api_key
         self.client = TwelveLabs(api_key=self.api_key)
-        self.index_name = "lecture-lens-index-v3"
+        self.index_name = "lecture-lens-index-v5"
         self._index = None
         self._async_client = None
         self.base_url = "https://api.twelvelabs.io/v1"
@@ -218,12 +218,6 @@ class TwelveLabsService:
         if self._async_client:
             await self._async_client.aclose()
 
-# Global service instance
-_twelve_labs_service: Optional[TwelveLabsService] = None
-
-def get_twelve_labs_service() -> TwelveLabsService:
+def get_twelve_labs_service(api_key: str = None) -> TwelveLabsService:
     """Get or create the TwelveLabs service"""
-    global _twelve_labs_service
-    if _twelve_labs_service is None:
-        _twelve_labs_service = TwelveLabsService()
-    return _twelve_labs_service
+    return TwelveLabsService(api_key=api_key or settings.TWELVE_LABS_API_KEY)

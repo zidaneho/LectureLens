@@ -28,12 +28,12 @@ const Landing: React.FC = () => {
         className="space-y-4"
       >
         <div className="flex items-center justify-center gap-3 mb-2">
-          <div className="bg-white p-2 rounded-xl shadow-xl">
-            <Sparkles className="w-5 h-5 text-black" />
+          <div className="bg-accent p-2 rounded-xl shadow-xl">
+            <Sparkles className="w-5 h-5 text-accent-contrast" />
           </div>
-          <h1 className="text-2xl font-bold tracking-widest text-white uppercase">LectureLens</h1>
+          <h1 className="text-2xl font-bold tracking-widest text-primary uppercase">LectureLens</h1>
         </div>
-        <h2 className="text-4xl md:text-5xl font-semibold text-white tracking-tight">How can I help you learn today?</h2>
+        <h2 className="text-4xl md:text-5xl font-semibold text-primary tracking-tight">How can I help you learn today?</h2>
       </motion.div>
 
       {/* Suggested prompts */}
@@ -58,24 +58,18 @@ const Landing: React.FC = () => {
           <input
             type="text"
             placeholder="Search for a topic or paste a YouTube URL..."
-            className="flex-1 bg-transparent border-none outline-none px-4 py-4 text-lg text-white placeholder:text-neutral-700"
+            className="flex-1 bg-transparent border-none outline-none px-4 py-4 text-lg text-primary placeholder:text-neutral-700"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
           />
           <button 
             type="submit"
-            className="bg-white hover:bg-neutral-200 text-black px-4 py-3 rounded-xl font-bold transition-all mr-1 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="bg-accent hover:opacity-90 text-accent-contrast px-4 py-3 rounded-xl font-bold transition-all mr-1 disabled:opacity-30 disabled:cursor-not-allowed"
             disabled={!prompt.trim()}
           >
             <ArrowRight className="w-5 h-5" />
           </button>
         </form>
-      </div>
-
-      <div className="flex flex-wrap justify-center gap-8 mt-4 text-[9px] text-neutral-600 font-black uppercase tracking-[0.2em]">
-        <span>TwelveLabs AI</span>
-        <span>Gemini Pro</span>
-        <span>Browser Agents</span>
       </div>
     </div>
   );

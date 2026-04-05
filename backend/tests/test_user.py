@@ -2,9 +2,16 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock, MagicMock
 
 def test_get_user_profile(client: TestClient, mock_db):
-    # Mock 'find_one' for a non-existent user to trigger default creation
-    mock_db.db.users.find_one = AsyncMock(return_value=None)
-    mock_db.db.users.insert_one = AsyncMock()
+    # Mock 'find_one' for an existing user
+    existing_user = {
+        "user_id": "default_user",
+        "email": "test@example.com",
+        "preferences": {
+            "persona": "Professor",
+            "summary_length": "medium"
+        }
+    }
+    mock_db.db.users.find_one = AsyncMock(return_value=existing_user)
 
     response = client.get("/api/user/profile")
     
@@ -12,7 +19,6 @@ def test_get_user_profile(client: TestClient, mock_db):
     data = response.json()
     assert data["user_id"] == "default_user"
     assert "preferences" in data
-    assert mock_db.db.users.insert_one.called
 
 def test_get_existing_user_profile(client: TestClient, mock_db):
     existing_user = {

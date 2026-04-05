@@ -15,3 +15,7 @@ playwright
 pytest
 pytest-asyncio
 httpx
+elevenlabs
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart

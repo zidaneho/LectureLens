@@ -14,7 +14,7 @@ class GeminiService:
             genai.configure(api_key=api_key)
             self.model = genai.GenerativeModel('gemini-1.5-flash')
 
-    async def generate_lecture_notes(self, twelve_labs_data: dict, title: str) -> dict:
+    async def generate_lecture_notes(self, twelve_labs_data: dict, title: str, persona: str = "Professor", summary_length: str = "medium") -> dict:
         """
         Engineers a system prompt to transform TwelveLabs data into structured lecture notes.
         """
@@ -28,8 +28,17 @@ class GeminiService:
         transcript_text = "\n".join([f"[{t['start']}-{t['end']}s]: {t['text']}" for t in transcript])
         concepts_text = "\n".join([f"- {c['label']} at {c['timestamp']}s" for c in key_concepts])
 
+        length_instruction = {
+            "short": "concise and high-level (approx 300 words)",
+            "medium": "standard and balanced (approx 800 words)",
+            "long": "extremely detailed and comprehensive (approx 1500+ words)"
+        }.get(summary_length, "balanced")
+
         prompt = f"""
-        You are an expert academic assistant specialized in transforming raw video transcripts and metadata into high-quality, structured lecture notes.
+        You are an expert academic assistant acting as a {persona}.
+        Your goal is to transform raw video transcripts and metadata into high-quality, structured lecture notes.
+        
+        The notes should be {length_instruction}.
         
         Video Title: {title}
         
@@ -40,7 +49,7 @@ class GeminiService:
         {concepts_text}
         
         Your task:
-        1. Create a well-structured markdown set of lecture notes.
+        1. Create a well-structured markdown set of lecture notes from the perspective of a {persona}.
         2. Use clear headings, bullet points, and emphasis where appropriate.
         3. Include timestamps for key sections so the user can refer back to the video.
         4. Synthesize the transcript into logical themes.
@@ -93,10 +102,6 @@ class GeminiService:
             "research_queries": [title]
         }
 
-_service = None
-
-def get_gemini_service():
-    global _service
-    if _service is None:
-        _service = GeminiService()
-    return _service
+def get_gemini_service(api_key: str = None):
+    """Get or create the Gemini service"""
+    return GeminiService(api_key=api_key or settings.GOOGLE_API_KEY)

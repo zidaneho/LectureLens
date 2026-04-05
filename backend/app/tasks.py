@@ -8,42 +8,57 @@ from app.services.browser_use_service import get_browser_use_service
 logger = logging.getLogger(__name__)
 
 @celery_app.task(name="process_video_pipeline", bind=True)
-def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = None, title: str = None):
+def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = None, title: str = None, preferences: dict = None):
     """
     Long-running pipeline: Browser Use -> TwelveLabs -> Gemini
     
     Args:
         task_id: Unique task identifier
         prompt: User's search/analysis prompt
-        video_url: Optional direct video URL (if provided, skips Browser Use)
-        title: Optional video title (if provided with video_url)
+        video_url: Optional direct video URL
+        title: Optional video title
+        preferences: User's preferences (including API keys and AI persona)
     """
     try:
+        preferences = preferences or {}
+        gemini_api_key = preferences.get("gemini_api_key")
+        twelve_labs_api_key = preferences.get("twelve_labs_api_key")
+        persona = preferences.get("persona", "Professor")
+        summary_length = preferences.get("summary_length", "medium")
+
         logger.info(f"Starting pipeline for task {task_id} with prompt: {prompt}")
-        
         # Stage 1: Search for video (Browser Use)
         self.update_state(state="PROGRESS", meta={"stage": "searching_video", "progress": 10})
-        
+
         if video_url and title:
             logger.info(f"Using provided video URL: {video_url}")
         else:
             logger.info(f"Using Browser Use to search for: {prompt}")
+            self.update_state(state="PROGRESS", meta={"stage": "searching_video", "progress": 30})
             browser_service = get_browser_use_service()
             search_result = asyncio.run(browser_service.search_video(prompt))
             video_url = search_result.get("video_url")
             title = search_result.get("title", "Lecture Video")
             logger.info(f"Found video: {title} at {video_url}")
-        
+
+        # Mark search stage as 100% complete before moving to dashboard
+        self.update_state(state="PROGRESS", meta={"stage": "searching_video", "progress": 100})
+
         # Stage 2: Index and process video with TwelveLabs
-        self.update_state(state="PROGRESS", meta={"stage": "processing_video", "progress": 40})
+        # We provide video_url and title to the state so the frontend can start showing the dashboard
+        self.update_state(state="PROGRESS", meta={
+            "stage": "processing_video", 
+            "progress": 40,
+            "video_url": video_url,
+            "title": title
+        })
         
         try:
             twelve_labs_data = asyncio.run(
-                _index_and_get_video_data(video_url, title)
+                _index_and_get_video_data(video_url, title, twelve_labs_api_key)
             )
         except Exception as e:
             logger.error(f"TwelveLabs processing failed: {str(e)}")
-            # Return mock data for now if TwelveLabs fails
             twelve_labs_data = {
                 "index_id": "mock_index",
                 "video_id": "mock_video",
@@ -59,9 +74,17 @@ def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = Non
         # Stage 3: Generate notes and extract resources with Gemini
         self.update_state(state="PROGRESS", meta={"stage": "generating_notes", "progress": 80})
         
-        gemini_service = get_gemini_service()
+        gemini_service = get_gemini_service(api_key=gemini_api_key)
+        
+        # We should update GeminiService to handle persona/length if we want, 
+        # but for now let's just use what's there and maybe pass them in the prompt.
         notes_result = asyncio.run(
-            gemini_service.generate_lecture_notes(twelve_labs_data, title)
+            gemini_service.generate_lecture_notes(
+                twelve_labs_data, 
+                title, 
+                persona=persona, 
+                summary_length=summary_length
+            )
         )
         
         # Extract resources using research queries from Gemini
@@ -91,11 +114,11 @@ def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = Non
         raise
 
 
-async def _index_and_get_video_data(video_url: str, title: str):
+async def _index_and_get_video_data(video_url: str, title: str, api_key: str = None):
     """
     Index a video on TwelveLabs and extract transcript/concepts using the SDK.
     """
-    service = get_twelve_labs_service()
+    service = get_twelve_labs_service(api_key=api_key)
     
     try:
         # Submit video for indexing (returns task_id)

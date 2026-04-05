@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { 
-  Loader2, CheckCircle2, Clock, BookOpen, MessageSquare, Play, 
+  Loader2, Clock, BookOpen, MessageSquare, Play, 
   ExternalLink, ChevronRight, Share2, Download, X, Sparkles, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import ReactPlayer from 'react-player';
 import ReactMarkdown from 'react-markdown';
 import ChatComponent from '../components/ChatComponent';
 import type { VideoData } from '../types';
@@ -14,7 +13,12 @@ const API_BASE_URL = 'http://localhost:8000/api';
 
 type Status = 'searching' | 'processing' | 'generating' | 'ready' | 'failed';
 
-const Player = (ReactPlayer as any).default || ReactPlayer;
+const getEmbedUrl = (url: string) => {
+  if (!url) return '';
+  const videoIdMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?]+)/);
+  const videoId = videoIdMatch ? videoIdMatch[1] : '';
+  return `https://www.youtube.com/embed/${videoId}?enablejsapi=1`;
+};
 
 const AnalysisView: React.FC = () => {
   const location = useLocation();
@@ -22,15 +26,39 @@ const AnalysisView: React.FC = () => {
   const prompt = location.state?.prompt;
   
   const [status, setStatus] = useState<Status>('searching');
-  const [_progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState(0);
   const [activeTab, setActiveTab] = useState<'notes' | 'video'>('video');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [videoData, setVideoData] = useState<VideoData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [playerReady, setPlayerReady] = useState(false);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+
+  const loadingMessages = [
+    "Initializing agent...",
+    "Traversing the web...",
+    "Finding best video...",
+    "Analyzing video content...",
+    "Extracting key concepts...",
+    "Structuring notes...",
+    "Almost done..."
+  ];
+
+  useEffect(() => {
+    if (!videoData?.video_url && status !== 'failed') {
+      const interval = setInterval(() => {
+        setLoadingMessageIndex(prev => {
+          if (prev < loadingMessages.length - 1) {
+            return prev + 1;
+          }
+          return prev; // Stay on "Almost done..."
+        });
+      }, 3500);
+      return () => clearInterval(interval);
+    }
+  }, [videoData?.video_url, status]);
   
-  const playerRef = useRef<any>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Redirect if no prompt
   useEffect(() => {
@@ -42,12 +70,16 @@ const AnalysisView: React.FC = () => {
   // Step 1: Initiate search
   useEffect(() => {
     const initiateSearch = async () => {
-      if (!prompt) return;
+      if (!prompt || videoData) return;
       
       try {
+        const token = localStorage.getItem('ll_token');
         const response = await fetch(`${API_BASE_URL}/search-video`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': token ? `Bearer ${token}` : ''
+          },
           body: JSON.stringify({ prompt }),
         });
         
@@ -62,7 +94,7 @@ const AnalysisView: React.FC = () => {
     };
 
     initiateSearch();
-  }, [prompt]);
+  }, [prompt, videoData]);
 
   // Step 2: Poll for status
   useEffect(() => {
@@ -82,6 +114,14 @@ const AnalysisView: React.FC = () => {
           else if (data.stage === 'generating_notes') setStatus('generating');
           
           setProgress(data.progress || 0);
+
+          // Update video data if available (even partially)
+          if (data.result) {
+            setVideoData(prev => ({
+              ...prev,
+              ...data.result
+            } as VideoData));
+          }
           
           if (data.status === 'completed') {
             setVideoData(data.result);
@@ -106,7 +146,16 @@ const AnalysisView: React.FC = () => {
   }, [taskId, status]);
 
   const handleSeek = (seconds: number) => {
-    playerRef.current?.seekTo(seconds, 'seconds');
+    if (iframeRef.current && iframeRef.current.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }),
+        '*'
+      );
+      iframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
+        '*'
+      );
+    }
     setActiveTab('video');
     if (window.innerWidth < 768) setIsChatOpen(false);
   };
@@ -116,13 +165,6 @@ const AnalysisView: React.FC = () => {
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
-
-  const stages: { id: Status; label: string; icon: any }[] = [
-    { id: 'searching', label: 'Finding best video...', icon: Play },
-    { id: 'processing', label: 'Indexing with TwelveLabs...', icon: Clock },
-    { id: 'generating', label: 'Creating notes with Gemini...', icon: BookOpen },
-    { id: 'ready', label: 'Ready!', icon: CheckCircle2 },
-  ];
 
   if (status === 'failed') {
     return (
@@ -144,7 +186,8 @@ const AnalysisView: React.FC = () => {
     );
   }
 
-  if (status !== 'ready' || !videoData) {
+  // Initial loading state: only show full-screen loader during video search
+  if (!videoData?.video_url) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black">
         <div className="max-w-md w-full space-y-10">
@@ -154,37 +197,32 @@ const AnalysisView: React.FC = () => {
           </div>
 
           <div className="space-y-5">
-            {stages.slice(0, 3).map((stage, idx) => {
-              const isActive = status === stage.id;
-              const currentStageIdx = stages.findIndex(s => s.id === status);
-              const isCompleted = currentStageIdx > idx;
-              
-              return (
-                <div key={stage.id} className="flex items-center gap-4">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 border transition-all duration-700 ${
-                    isActive ? 'border-white bg-white/5' : isCompleted ? 'border-neutral-500 bg-neutral-500/10' : 'border-neutral-900 bg-neutral-900/50'
-                  }`}>
-                    {isCompleted ? <CheckCircle2 className="w-3.5 h-3.5 text-neutral-500" /> : isActive ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" /> : <stage.icon className="w-3.5 h-3.5 text-neutral-800" />}
-                  </div>
-                  <div className={`flex-1 h-[1px] bg-neutral-900 relative`}>
-                    {isActive && (
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: '100%' }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                        className="absolute inset-0 bg-white"
-                      />
-                    )}
-                    {isCompleted && <div className="absolute inset-0 bg-neutral-500" />}
-                  </div>
-                  <span className={`text-[10px] font-bold uppercase tracking-widest min-w-[130px] ${isActive ? 'text-white' : isCompleted ? 'text-neutral-500' : 'text-neutral-800'}`}>
-                    {stage.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+            <div className="flex items-center gap-4">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 border border-white bg-white/5">
+                <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+              </div>
+              <div className="flex-1 h-[1px] bg-neutral-900 relative">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progress}%` }}
+                  transition={{ duration: 0.5 }}
+                  className="absolute inset-0 bg-white"
+                />
+              </div>
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={loadingMessageIndex}
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  transition={{ duration: 0.3 }}
+                  className="text-[10px] font-bold uppercase tracking-widest min-w-[170px] text-white whitespace-nowrap"
+                >
+                  {loadingMessages[loadingMessageIndex]}
+                </motion.span>
+              </AnimatePresence>
+              </div>
+              </div>        </div>
       </div>
     );
   }
@@ -234,28 +272,14 @@ const AnalysisView: React.FC = () => {
                 className="p-4 md:p-6 space-y-6"
               >
                 <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-neutral-900 ring-1 ring-white/10 shadow-2xl">
-                  {!playerReady && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-neutral-900">
-                      <Loader2 className="w-8 h-8 text-white/20 animate-spin" />
-                    </div>
-                  )}
-                  <Player
-                    ref={playerRef}
-                    url={videoData.video_url}
+                  <iframe
+                    ref={iframeRef}
+                    src={getEmbedUrl(videoData.video_url)}
                     width="100%"
                     height="100%"
-                    className="absolute top-0 left-0"
-                    controls
-                    onReady={() => setPlayerReady(true)}
-                    config={{
-                      youtube: {
-                        playerVars: { 
-                          origin: window.location.origin,
-                          modestbranding: 1,
-                          rel: 0
-                        }
-                      }
-                    }}
+                    className="absolute top-0 left-0 border-none"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
                   />
                 </div>
                 
@@ -278,23 +302,30 @@ const AnalysisView: React.FC = () => {
                       <Clock className="w-3.5 h-3.5" />
                       Key Moments
                     </h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {videoData.twelve_labs_data.key_concepts.map((concept, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handleSeek(concept.timestamp)}
-                          className="flex items-center gap-4 p-3 rounded-xl bg-neutral-900/50 border border-white/5 hover:border-white/20 transition-all text-left group"
-                        >
-                          <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 group-hover:bg-white/10 transition-colors">
-                            <Play className="w-3 h-3 text-white fill-white" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-[13px] font-medium text-neutral-200 truncate">{concept.label}</div>
-                            <div className="text-[9px] font-mono text-neutral-600 tracking-tighter">{formatTime(concept.timestamp)}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+                    {!videoData.twelve_labs_data ? (
+                      <div className="flex items-center gap-3 p-4 rounded-xl bg-neutral-900/30 border border-white/5 border-dashed">
+                        <Loader2 className="w-4 h-4 text-neutral-700 animate-spin" />
+                        <span className="text-[11px] font-bold uppercase tracking-widest text-neutral-700">Indexing with TwelveLabs...</span>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {videoData.twelve_labs_data.key_concepts.map((concept, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handleSeek(concept.timestamp)}
+                            className="flex items-center gap-4 p-3 rounded-xl bg-neutral-900/50 border border-white/5 hover:border-white/20 transition-all text-left group"
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 group-hover:bg-white/10 transition-colors">
+                              <Play className="w-3 h-3 text-white fill-white" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[13px] font-medium text-neutral-200 truncate">{concept.label}</div>
+                              <div className="text-[9px] font-mono text-neutral-600 tracking-tighter">{formatTime(concept.timestamp)}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -306,36 +337,50 @@ const AnalysisView: React.FC = () => {
                 exit={{ opacity: 0 }}
                 className="p-6 md:p-8 max-w-3xl mx-auto space-y-10"
               >
-                <div className="prose prose-invert prose-neutral prose-sm max-w-none prose-h1:text-white prose-h2:text-white prose-strong:text-white prose-headings:tracking-tight">
-                  <ReactMarkdown>{videoData.lecture_notes.markdown_content}</ReactMarkdown>
-                </div>
-
-                <div className="space-y-4 pt-8 border-t border-white/10">
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 flex items-center gap-2">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Resources
-                  </h3>
-                  <div className="grid gap-2">
-                    {videoData.lecture_notes.external_resources.map((res, idx) => (
-                      <a 
-                        key={idx}
-                        href={res.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-4 rounded-xl bg-neutral-900/50 border border-white/5 hover:border-white/20 flex items-center justify-between group transition-all"
-                      >
-                        <div className="flex items-center gap-4">
-                          <BookOpen className="w-4 h-4 text-neutral-600 group-hover:text-white" />
-                          <div>
-                            <div className="text-[13px] font-medium text-neutral-200">{res.title}</div>
-                            <div className="text-[9px] text-neutral-600 font-bold uppercase tracking-widest">{res.type}</div>
-                          </div>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-neutral-800 group-hover:text-white" />
-                      </a>
-                    ))}
+                {!videoData.lecture_notes ? (
+                  <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                    <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center bg-white/5">
+                      <Loader2 className="w-5 h-5 text-white animate-spin" />
+                    </div>
+                    <div className="text-center space-y-1">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white">Creating notes with Gemini...</p>
+                      <p className="text-[9px] font-medium text-neutral-600 uppercase tracking-widest">This may take a minute</p>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="prose prose-invert prose-neutral prose-sm max-w-none prose-h1:text-white prose-h2:text-white prose-strong:text-white prose-headings:tracking-tight">
+                      <ReactMarkdown>{videoData.lecture_notes.markdown_content}</ReactMarkdown>
+                    </div>
+
+                    <div className="space-y-4 pt-8 border-t border-white/10">
+                      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 flex items-center gap-2">
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Resources
+                      </h3>
+                      <div className="grid gap-2">
+                        {videoData.lecture_notes.external_resources.map((res, idx) => (
+                          <a 
+                            key={idx}
+                            href={res.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-4 rounded-xl bg-neutral-900/50 border border-white/5 hover:border-white/20 flex items-center justify-between group transition-all"
+                          >
+                            <div className="flex items-center gap-4">
+                              <BookOpen className="w-4 h-4 text-neutral-600 group-hover:text-white" />
+                              <div>
+                                <div className="text-[13px] font-medium text-neutral-200">{res.title}</div>
+                                <div className="text-[9px] text-neutral-600 font-bold uppercase tracking-widest">{res.type}</div>
+                              </div>
+                            </div>
+                            <ChevronRight className="w-3.5 h-3.5 text-neutral-800 group-hover:text-white" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -351,9 +396,9 @@ const AnalysisView: React.FC = () => {
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
             className={`
-              fixed inset-y-0 right-0 w-full sm:w-[320px] md:relative
+              fixed inset-0 md:relative
               bg-black border-l border-white/10 z-50 md:z-auto
-              flex flex-col shrink-0 md:w-[300px]
+              flex flex-col shrink-0 w-full md:w-[300px]
               ${!isChatOpen && 'hidden md:flex'}
             `}
           >

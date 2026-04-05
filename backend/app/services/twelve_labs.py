@@ -42,11 +42,11 @@ class TwelveLabsService:
             index_name=self.index_name,
             models=[
                 IndexesCreateRequestModelsItem(
-                    model_name="marengo2.6",
+                    model_name="marengo2.7",
                     model_options=["visual", "conversation", "text_in_video", "logo"]
                 ),
                 IndexesCreateRequestModelsItem(
-                    model_name="pegasus1.1",
+                    model_name="pegasus1.2",
                     model_options=["visual", "conversation"]
                 )
             ]

@@ -22,7 +22,7 @@ class TestTwelveLabsService:
     async def test_get_index_existing(self, service):
         """Test getting an existing index"""
         mock_index = MagicMock()
-        mock_index.index_name = "lecture-lens-index"
+        mock_index.index_name = "lecture-lens-index-v3"
         # Updated to use 'indexes' instead of 'index'
         service.client.indexes.list.return_value = [mock_index]
         

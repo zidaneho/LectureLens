@@ -19,7 +19,7 @@ class TwelveLabsService:
     def __init__(self):
         self.api_key = settings.TWELVE_LABS_API_KEY
         self.client = TwelveLabs(api_key=self.api_key)
-        self.index_name = "lecture-lens-index"
+        self.index_name = "lecture-lens-index-v3"
         self._index = None
         self._async_client = None
         self.base_url = "https://api.twelvelabs.io/v1"

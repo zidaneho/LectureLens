@@ -1,19 +1,79 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: dark;
-  color: #ffffff;
-  background-color: #000000;
+  /* Default (Dark Low) */
+  --bg-primary: #1a1b1e;
+  --bg-secondary: #25262b;
+  --bg-tertiary: #2c2e33;
+  --text-primary: #c1c2c5;
+  --text-secondary: #909296;
+  --accent: #4dabf7;
+  --accent-contrast: #ffffff;
+  --border: #373a40;
+  --toggle-bg: #373a40;
+  --toggle-thumb: #4dabf7;
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  color: var(--text-primary);
 }
+
+.theme-dark_high {
+  --bg-primary: #000000;
+  --bg-secondary: #0a0a0a;
+  --bg-tertiary: #171717;
+  --text-primary: #ffffff;
+  --text-secondary: #a3a3a3;
+  --accent: #ffffff;
+  --accent-contrast: #000000;
+  --border: #262626;
+  --toggle-bg: #404040;
+  --toggle-thumb: #ffffff;
+}
+
+.theme-dark_low {
+  --bg-primary: #1a1b1e;
+  --bg-secondary: #25262b;
+  --bg-tertiary: #2c2e33;
+  --text-primary: #c1c2c5;
+  --text-secondary: #909296;
+  --accent: #4dabf7;
+  --accent-contrast: #ffffff;
+  --border: #373a40;
+  --toggle-bg: #373a40;
+  --toggle-thumb: #4dabf7;
+}
+
+.theme-light_high {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --bg-tertiary: #e9ecef;
+  --text-primary: #000000;
+  --text-secondary: #495057;
+  --accent: #ffffff;
+  --accent-contrast: #000000;
+  --border: #dee2e6;
+  --toggle-bg: #e9ecef;
+  --toggle-thumb: #000000;
+}
+
+/* Global Transitions */
+body, main, aside, div, nav, header, section {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Utility to use variables */
+.bg-primary { background-color: var(--bg-primary) !important; }
+.bg-secondary { background-color: var(--bg-secondary) !important; }
+.bg-tertiary { background-color: var(--bg-tertiary) !important; }
+.bg-accent { background-color: var(--accent) !important; }
+.text-primary { color: var(--text-primary) !important; }
+.text-secondary { color: var(--text-secondary) !important; }
+.text-accent-contrast { color: var(--accent-contrast) !important; }
+.border-primary { border-color: var(--border) !important; }
 
 * {
   box-sizing: border-box;

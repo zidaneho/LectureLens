@@ -1,45 +1,202 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
-  Loader2, CheckCircle2, Clock, BookOpen, MessageSquare, Play, 
-  ExternalLink, ChevronRight, Share2, Download, X, Sparkles
+  Loader2, Clock, BookOpen, MessageSquare, Play, 
+  ExternalLink, ChevronRight, Share2, Download, X, Sparkles, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import ReactPlayer from 'react-player';
 import ReactMarkdown from 'react-markdown';
-import { mockVideoData } from '../mockVideoData';
+import remarkGfm from 'remark-gfm';
 import ChatComponent from '../components/ChatComponent';
+import type { VideoData } from '../types';
 
-type Status = 'searching' | 'processing' | 'generating' | 'ready';
+const API_BASE_URL = 'http://localhost:8000/api';
+
+type Status = 'searching' | 'processing' | 'generating' | 'searching_moments' | 'ready' | 'failed';
+
+const getEmbedUrl = (url: string) => {
+  if (!url) return '';
+  const videoIdMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?]+)/);
+  const videoId = videoIdMatch ? videoIdMatch[1] : '';
+  return `https://www.youtube.com/embed/${videoId}?enablejsapi=1`;
+};
 
 const AnalysisView: React.FC = () => {
   const location = useLocation();
-  const prompt = location.state?.prompt || 'Loading...';
+  const navigate = useNavigate();
+  const prompt = location.state?.prompt;
+  
   const [status, setStatus] = useState<Status>('searching');
+  const [progress, setProgress] = useState(0);
+  const [displayProgress, setDisplayProgress] = useState(0);
   const [activeTab, setActiveTab] = useState<'notes' | 'video'>('video');
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const playerRef = useRef<any>(null);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [taskDone, setTaskDone] = useState(false);
+  const [videoData, setVideoData] = useState<VideoData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
 
+  const displayProgressRef = useRef(0);
   useEffect(() => {
-    let progressValue = 10;
-    const timer = setInterval(() => {
-      progressValue += Math.random() * 10;
-      
-      if (progressValue >= 100) {
-        clearInterval(timer);
-        setStatus('ready');
-      } else if (progressValue > 70) {
-        setStatus('generating');
-      } else if (progressValue > 30) {
-        setStatus('processing');
-      }
-    }, 500);
+    displayProgressRef.current = displayProgress;
+  }, [displayProgress]);
 
-    return () => clearInterval(timer);
-  }, []);
+  const loadingMessages = [
+    "Initializing agent...",
+    "Traversing the web...",
+    "Finding best video...",
+    "Evaluating sources...",
+    "Selecting lecture...",
+    "Verifying video quality...",
+    "Preparing lecture context...",
+    "Still searching...",
+    "Looking for the perfect match...",
+    "Almost done..."
+  ];
+
+  // Loading messages rotation
+  useEffect(() => {
+    if (!videoData?.video_url && status !== 'failed') {
+      const interval = setInterval(() => {
+        setLoadingMessageIndex(prev => {
+          if (displayProgressRef.current >= 90) {
+            return loadingMessages.length - 1; // "Almost done..."
+          }
+          if (prev < loadingMessages.length - 2) {
+            return prev + 1;
+          }
+          // Loop back to a middle message to keep it feeling active
+          return 2; 
+        });
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [videoData?.video_url, status, loadingMessages.length]);
+
+  // Smooth progress animation and drift
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDisplayProgress(prev => {
+        if (prev < progress) {
+          // Catch up to backend progress
+          const diff = progress - prev;
+          const step = Math.max(diff * 0.1, 0.2);
+          return Math.min(prev + step, progress);
+        } else if (prev < 99 && status !== 'ready' && status !== 'failed') {
+          // Slow drift when waiting for backend
+          // The drift speed decreases slightly as we get closer to 100
+          const increment = Math.max(0.01, (100 - prev) / 1500);
+          return prev + increment;
+        }
+        return prev;
+      });
+    }, 50);
+    return () => clearInterval(interval);
+  }, [progress, status]);
+  
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Redirect if no prompt
+  useEffect(() => {
+    if (!prompt) {
+      navigate('/');
+    }
+  }, [prompt, navigate]);
+
+  const searchInitiated = useRef(false);
+
+  // Step 1: Initiate search (once only)
+  useEffect(() => {
+    if (!prompt || searchInitiated.current) return;
+    searchInitiated.current = true;
+
+    const initiateSearch = async () => {
+      try {
+        const token = localStorage.getItem('ll_token');
+        const response = await fetch(`${API_BASE_URL}/search-video`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': token ? `Bearer ${token}` : ''
+          },
+          body: JSON.stringify({ prompt }),
+        });
+
+        if (!response.ok) throw new Error('Failed to initiate search');
+
+        const data = await response.json();
+        setTaskId(data.task_id);
+      } catch (err: any) {
+        setError(err.message);
+        setStatus('failed');
+      }
+    };
+
+    initiateSearch();
+  }, [prompt]);
+
+  // Step 2: Poll for status — continues until task is done, independent of display status
+  useEffect(() => {
+    if (!taskId || taskDone) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/task-status/${taskId}`);
+        if (!response.ok) throw new Error('Failed to fetch status');
+
+        const data = await response.json();
+
+        // Map backend stages to loading screen label
+        if (data.stage === 'searching_video') setStatus('searching');
+        else if (data.stage === 'processing_video') setStatus('processing');
+        else if (data.stage === 'generating_notes') setStatus('generating');
+        else if (data.stage === 'searching_moments') setStatus('searching_moments');
+
+        setProgress(data.progress || 0);
+
+        // Merge any partial result into videoData
+        if (data.result) {
+          setVideoData(prev => ({ ...prev, ...data.result } as VideoData));
+        }
+
+        // Transition to the video page as soon as we have a URL + IDs
+        if (data.result?.video_url && data.result?.index_id) {
+          // If we're searching moments, don't set ready yet? No, we want the player to show up, 
+          // just with the moments loading. Ready = showing the page.
+          if (status !== 'failed') setStatus('ready');
+        }
+
+        if (data.status === 'completed') {
+          setVideoData(data.result);
+          setStatus('ready');
+          setTaskDone(true);
+        } else if (data.status === 'failed') {
+          setError(data.message || 'Processing failed');
+          setStatus('failed');
+          setTaskDone(true);
+        }
+      } catch (err: any) {
+        setError(err.message);
+        setStatus('failed');
+        setTaskDone(true);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [taskId, taskDone]);
 
   const handleSeek = (seconds: number) => {
-    playerRef.current?.seekTo(seconds, 'seconds');
+    if (iframeRef.current && iframeRef.current.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }),
+        '*'
+      );
+      iframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
+        '*'
+      );
+    }
     setActiveTab('video');
     if (window.innerWidth < 768) setIsChatOpen(false);
   };
@@ -50,14 +207,28 @@ const AnalysisView: React.FC = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const stages: { id: Status; label: string; icon: any }[] = [
-    { id: 'searching', label: 'Finding best video...', icon: Play },
-    { id: 'processing', label: 'Indexing with TwelveLabs...', icon: Clock },
-    { id: 'generating', label: 'Creating notes with Gemini...', icon: BookOpen },
-    { id: 'ready', label: 'Ready!', icon: CheckCircle2 },
-  ];
+  if (status === 'failed') {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black text-center space-y-6">
+        <div className="bg-white p-3 rounded-full">
+          <AlertCircle className="w-8 h-8 text-black" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-xl font-bold text-white tracking-tight">Something went wrong</h2>
+          <p className="text-neutral-500 text-sm max-w-xs mx-auto">{error}</p>
+        </div>
+        <button 
+          onClick={() => navigate('/')}
+          className="bg-white text-black px-6 py-3 rounded-xl font-bold transition-all hover:bg-neutral-200"
+        >
+          Try Another Prompt
+        </button>
+      </div>
+    );
+  }
 
-  if (status !== 'ready') {
+  // Initial loading state: only show full-screen loader during video search
+  if (!videoData?.video_url) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black">
         <div className="max-w-md w-full space-y-10">
@@ -67,42 +238,35 @@ const AnalysisView: React.FC = () => {
           </div>
 
           <div className="space-y-5">
-            {stages.slice(0, 3).map((stage, idx) => {
-              const isActive = status === stage.id;
-              const currentStageIdx = stages.findIndex(s => s.id === status);
-              const isCompleted = currentStageIdx > idx;
-              
-              return (
-                <div key={stage.id} className="flex items-center gap-4">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 border transition-all duration-700 ${
-                    isActive ? 'border-white bg-white/5' : isCompleted ? 'border-neutral-500 bg-neutral-500/10' : 'border-neutral-900 bg-neutral-900/50'
-                  }`}>
-                    {isCompleted ? <CheckCircle2 className="w-3.5 h-3.5 text-neutral-500" /> : isActive ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" /> : <stage.icon className="w-3.5 h-3.5 text-neutral-800" />}
-                  </div>
-                  <div className={`flex-1 h-[1px] bg-neutral-900 relative`}>
-                    {isActive && (
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: '100%' }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                        className="absolute inset-0 bg-white"
-                      />
-                    )}
-                    {isCompleted && <div className="absolute inset-0 bg-neutral-500" />}
-                  </div>
-                  <span className={`text-[10px] font-bold uppercase tracking-widest min-w-[130px] ${isActive ? 'text-white' : isCompleted ? 'text-neutral-500' : 'text-neutral-800'}`}>
-                    {stage.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+            <div className="flex items-center gap-4">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 border border-white bg-white/5">
+                <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+              </div>
+              <div className="flex-1 h-[1px] bg-neutral-900 relative">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${displayProgress}%` }}
+                  transition={{ type: "tween", duration: 0.1, ease: "linear" }}
+                  className="absolute inset-0 bg-white"
+                />
+              </div>
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={loadingMessageIndex}
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  transition={{ duration: 0.3 }}
+                  className="text-[10px] font-bold uppercase tracking-widest min-w-[170px] text-white whitespace-nowrap"
+                >
+                  {loadingMessages[loadingMessageIndex]}
+                </motion.span>
+              </AnimatePresence>
+              </div>
+              </div>        </div>
       </div>
     );
   }
-
-  const Player = ReactPlayer as any;
 
   return (
     <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden bg-black relative">
@@ -124,6 +288,9 @@ const AnalysisView: React.FC = () => {
             </button>
           </div>
           <div className="flex items-center gap-1">
+            <div className="text-[10px] font-mono text-neutral-700 mr-2 hidden md:block select-all bg-neutral-950 px-2 py-1 rounded border border-white/5 max-w-[200px] truncate">
+              {videoData.video_url}
+            </div>
             <button className="p-1.5 text-neutral-600 hover:text-white transition-colors"><Share2 className="w-3.5 h-3.5" /></button>
             <button className="p-1.5 text-neutral-600 hover:text-white transition-colors"><Download className="w-3.5 h-3.5" /></button>
             <button 
@@ -145,42 +312,67 @@ const AnalysisView: React.FC = () => {
                 exit={{ opacity: 0 }}
                 className="p-4 md:p-6 space-y-6"
               >
-                <div className="aspect-video w-full rounded-xl overflow-hidden bg-neutral-900 ring-1 ring-white/10">
-                  <Player
-                    ref={playerRef}
-                    url={mockVideoData.video_url}
+                <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-neutral-900 ring-1 ring-white/10 shadow-2xl">
+                  <iframe
+                    ref={iframeRef}
+                    src={getEmbedUrl(videoData.video_url)}
                     width="100%"
                     height="100%"
-                    controls
-                    playing
+                    className="absolute top-0 left-0 border-none"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
                   />
                 </div>
                 
                 <div className="space-y-4">
-                  <h1 className="text-xl font-bold text-white tracking-tight">{mockVideoData.title}</h1>
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <h1 className="text-xl font-bold text-white tracking-tight">{videoData.title}</h1>
+                    <a 
+                      href={videoData.video_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neutral-900 border border-white/10 text-[10px] font-bold uppercase tracking-wider text-neutral-400 hover:text-white hover:border-white/20 transition-all shrink-0"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      Watch on YouTube
+                    </a>
+                  </div>
                   
                   <div className="space-y-3">
                     <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 flex items-center gap-2">
                       <Clock className="w-3.5 h-3.5" />
                       Key Moments
                     </h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {mockVideoData.twelve_labs_data.key_concepts.map((concept, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handleSeek(concept.timestamp)}
-                          className="flex items-center gap-4 p-3 rounded-xl bg-neutral-900/50 border border-white/5 hover:border-white/20 transition-all text-left group"
-                        >
-                          <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 group-hover:bg-white/10 transition-colors">
-                            <Play className="w-3 h-3 text-white fill-white" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-[13px] font-medium text-neutral-200 truncate">{concept.label}</div>
-                            <div className="text-[9px] font-mono text-neutral-600 tracking-tighter">{formatTime(concept.timestamp)}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+                    {(!videoData.twelve_labs_data || (!taskDone && videoData.twelve_labs_data.key_concepts.length === 0)) ? (
+                      <div className="flex items-center gap-3 p-4 rounded-xl bg-neutral-900/30 border border-white/5 border-dashed">
+                        <Loader2 className="w-4 h-4 text-neutral-700 animate-spin" />
+                        <span className="text-[11px] font-bold uppercase tracking-widest text-neutral-700">
+                          {!videoData.twelve_labs_data ? "Indexing with TwelveLabs..." : "Searching timestamps..."}
+                        </span>
+                      </div>
+                    ) : videoData.twelve_labs_data.key_concepts.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {videoData.twelve_labs_data.key_concepts.map((concept, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handleSeek(concept.timestamp)}
+                            className="flex items-center gap-4 p-3 rounded-xl bg-neutral-900/50 border border-white/5 hover:border-white/20 transition-all text-left group"
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 group-hover:bg-white/10 transition-colors">
+                              <Play className="w-3 h-3 text-white fill-white" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[13px] font-medium text-neutral-200 truncate">{concept.label}</div>
+                              <div className="text-[9px] font-mono text-neutral-600 tracking-tighter">{formatTime(concept.timestamp)}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 rounded-xl bg-neutral-900/30 border border-white/5 border-dashed text-center">
+                         <span className="text-[11px] font-bold uppercase tracking-widest text-neutral-700">No key moments found</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -192,36 +384,50 @@ const AnalysisView: React.FC = () => {
                 exit={{ opacity: 0 }}
                 className="p-6 md:p-8 max-w-3xl mx-auto space-y-10"
               >
-                <div className="prose prose-invert prose-neutral prose-sm max-w-none prose-h1:text-white prose-h2:text-white prose-strong:text-white prose-headings:tracking-tight">
-                  <ReactMarkdown>{mockVideoData.lecture_notes.markdown_content}</ReactMarkdown>
-                </div>
-
-                <div className="space-y-4 pt-8 border-t border-white/10">
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 flex items-center gap-2">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Resources
-                  </h3>
-                  <div className="grid gap-2">
-                    {mockVideoData.lecture_notes.external_resources.map((res, idx) => (
-                      <a 
-                        key={idx}
-                        href={res.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-4 rounded-xl bg-neutral-900/50 border border-white/5 hover:border-white/20 flex items-center justify-between group transition-all"
-                      >
-                        <div className="flex items-center gap-4">
-                          <BookOpen className="w-4 h-4 text-neutral-600 group-hover:text-white" />
-                          <div>
-                            <div className="text-[13px] font-medium text-neutral-200">{res.title}</div>
-                            <div className="text-[9px] text-neutral-600 font-bold uppercase tracking-widest">{res.type}</div>
-                          </div>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-neutral-800 group-hover:text-white" />
-                      </a>
-                    ))}
+                {!videoData.lecture_notes || !videoData.lecture_notes.markdown_content ? (
+                  <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                    <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center bg-white/5">
+                      <Loader2 className="w-5 h-5 text-white animate-spin" />
+                    </div>
+                    <div className="text-center space-y-1">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white">Creating notes with Gemini...</p>
+                      <p className="text-[9px] font-medium text-neutral-600 uppercase tracking-widest">This may take a minute</p>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="prose prose-invert prose-neutral prose-sm max-w-none prose-h1:text-white prose-h2:text-white prose-strong:text-white prose-headings:tracking-tight">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{videoData.lecture_notes.markdown_content}</ReactMarkdown>
+                    </div>
+
+                    <div className="space-y-4 pt-8 border-t border-white/10">
+                      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 flex items-center gap-2">
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Resources
+                      </h3>
+                      <div className="grid gap-2">
+                        {videoData.lecture_notes.external_resources.map((res, idx) => (
+                          <a 
+                            key={idx}
+                            href={res.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-4 rounded-xl bg-neutral-900/50 border border-white/5 hover:border-white/20 flex items-center justify-between group transition-all"
+                          >
+                            <div className="flex items-center gap-4">
+                              <BookOpen className="w-4 h-4 text-neutral-600 group-hover:text-white" />
+                              <div>
+                                <div className="text-[13px] font-medium text-neutral-200">{res.title}</div>
+                                <div className="text-[9px] text-neutral-600 font-bold uppercase tracking-widest">{res.type}</div>
+                              </div>
+                            </div>
+                            <ChevronRight className="w-3.5 h-3.5 text-neutral-800 group-hover:text-white" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -237,9 +443,9 @@ const AnalysisView: React.FC = () => {
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
             className={`
-              fixed inset-y-0 right-0 w-full sm:w-[320px] md:relative
+              fixed inset-0 md:relative
               bg-black border-l border-white/10 z-50 md:z-auto
-              flex flex-col shrink-0 md:w-[300px]
+              flex flex-col shrink-0 w-full md:w-[300px]
               ${!isChatOpen && 'hidden md:flex'}
             `}
           >
@@ -255,7 +461,11 @@ const AnalysisView: React.FC = () => {
               </button>
             </div>
             <div className="flex-1 overflow-hidden">
-              <ChatComponent onSeek={handleSeek} />
+              <ChatComponent 
+                indexId={videoData?.index_id || ''} 
+                videoId={videoData?.video_id || ''} 
+                onSeek={handleSeek} 
+              />
             </div>
           </motion.div>
         )}

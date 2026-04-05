@@ -12,3 +12,11 @@ google-generativeai
 browser-use
 langchain-google-genai
 playwright
+pytest
+pytest-asyncio
+httpx
+elevenlabs
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart
+yt-dlp

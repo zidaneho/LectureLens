@@ -14,18 +14,21 @@ const API_BASE_URL = 'http://localhost:8000/api';
 
 type Status = 'searching' | 'processing' | 'generating' | 'ready' | 'failed';
 
+const Player = (ReactPlayer as any).default || ReactPlayer;
+
 const AnalysisView: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const prompt = location.state?.prompt;
   
   const [status, setStatus] = useState<Status>('searching');
-  const [progress, setProgress] = useState(0);
+  const [_progress, setProgress] = useState(0);
   const [activeTab, setActiveTab] = useState<'notes' | 'video'>('video');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [videoData, setVideoData] = useState<VideoData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [playerReady, setPlayerReady] = useState(false);
   
   const playerRef = useRef<any>(null);
 
@@ -186,8 +189,6 @@ const AnalysisView: React.FC = () => {
     );
   }
 
-  const Player = ReactPlayer as any;
-
   return (
     <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden bg-black relative">
       <div className="flex-1 flex flex-col min-w-0 md:border-r border-white/10 h-full overflow-hidden">
@@ -232,17 +233,24 @@ const AnalysisView: React.FC = () => {
                 exit={{ opacity: 0 }}
                 className="p-4 md:p-6 space-y-6"
               >
-                <div className="aspect-video w-full rounded-xl overflow-hidden bg-neutral-900 ring-1 ring-white/10">
+                <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-neutral-900 ring-1 ring-white/10 shadow-2xl">
+                  {!playerReady && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-neutral-900">
+                      <Loader2 className="w-8 h-8 text-white/20 animate-spin" />
+                    </div>
+                  )}
                   <Player
                     ref={playerRef}
                     url={videoData.video_url}
                     width="100%"
                     height="100%"
+                    className="absolute top-0 left-0"
                     controls
+                    onReady={() => setPlayerReady(true)}
                     config={{
                       youtube: {
                         playerVars: { 
-                          showinfo: 1,
+                          origin: window.location.origin,
                           modestbranding: 1,
                           rel: 0
                         }
@@ -252,7 +260,18 @@ const AnalysisView: React.FC = () => {
                 </div>
                 
                 <div className="space-y-4">
-                  <h1 className="text-xl font-bold text-white tracking-tight">{videoData.title}</h1>
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <h1 className="text-xl font-bold text-white tracking-tight">{videoData.title}</h1>
+                    <a 
+                      href={videoData.video_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neutral-900 border border-white/10 text-[10px] font-bold uppercase tracking-wider text-neutral-400 hover:text-white hover:border-white/20 transition-all shrink-0"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      Watch on YouTube
+                    </a>
+                  </div>
                   
                   <div className="space-y-3">
                     <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 flex items-center gap-2">
@@ -350,7 +369,11 @@ const AnalysisView: React.FC = () => {
               </button>
             </div>
             <div className="flex-1 overflow-hidden">
-              <ChatComponent videoId={videoData?.id || ''} onSeek={handleSeek} />
+              <ChatComponent 
+                indexId={videoData?.index_id || ''} 
+                videoId={videoData?.video_id || ''} 
+                onSeek={handleSeek} 
+              />
             </div>
           </motion.div>
         )}

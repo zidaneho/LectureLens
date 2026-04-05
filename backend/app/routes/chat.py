@@ -24,7 +24,8 @@ async def chat(request: ChatRequest):
     
     try:
         result = await chat_service.chat(
-            index_id=request.video_id,
+            index_id=request.index_id,
+            video_id=request.video_id,
             message=request.message,
             persona=request.persona or "default"
         )

@@ -1,8 +1,11 @@
 import os
 from celery import Celery
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from the root of the backend directory
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 # Use Redis as the broker and result backend
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

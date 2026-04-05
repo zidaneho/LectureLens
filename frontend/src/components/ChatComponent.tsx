@@ -12,11 +12,12 @@ interface Message {
 }
 
 interface ChatComponentProps {
+  indexId: string;
   videoId: string;
   onSeek: (seconds: number) => void;
 }
 
-const ChatComponent: React.FC<ChatComponentProps> = ({ videoId, onSeek }) => {
+const ChatComponent: React.FC<ChatComponentProps> = ({ indexId, videoId, onSeek }) => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -41,6 +42,7 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ videoId, onSeek }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          index_id: indexId,
           video_id: videoId,
           message: input,
           persona: 'default'

@@ -74,17 +74,17 @@ class GeminiService:
     async def extract_resources(self, research_queries: list) -> list:
         """
         Finds supplementary papers/exercises based on Gemini's research queries.
-        (Future implementation: Browser Use)
+        Uses Browser Use.
         """
-        # For now, return mock resources as Browser Use implementation is pending
-        # This matches the contract in API_CONTRACTS.md
-        resources = []
-        for query in research_queries:
-            resources.append({
-                "title": f"Study Guide for {query}",
-                "url": f"https://example.com/search?q={query.replace(' ', '+')}",
-                "type": "guide"
-            })
+        from app.services.browser_use_service import get_browser_use_service
+        
+        if not research_queries:
+            return []
+            
+        logger.info(f"Extracting resources for: {research_queries}")
+        browser_service = get_browser_use_service()
+        resources = await browser_service.extract_resources(research_queries)
+        
         return resources
 
     def _mock_notes(self, title: str) -> dict:

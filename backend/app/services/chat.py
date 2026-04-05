@@ -22,6 +22,7 @@ class ChatService:
     async def chat(
         self,
         index_id: str,
+        video_id: str,
         message: str,
         transcript: Optional[list] = None,
         persona: str = "default"
@@ -30,7 +31,8 @@ class ChatService:
         Process a chat message and return a response with video timestamp.
         
         Args:
-            index_id: TwelveLabs index ID of the video
+            index_id: TwelveLabs index ID
+            video_id: TwelveLabs video ID
             message: User's question or message
             transcript: Optional transcript segments for context
             persona: Persona for response style (default, spongebob, etc.)
@@ -38,8 +40,8 @@ class ChatService:
         Returns: Dictionary with response_text, timestamp, and optional audio_url
         """
         try:
-            # Search the video for relevant moments
-            search_results = await self.twelve_labs.search_video(index_id, message)
+            # Search the video for relevant moments, filtering by video_id
+            search_results = await self.twelve_labs.search_video(index_id, message, video_id)
             
             # Extract the best matching moment and its timestamp
             timestamp, relevant_text = self._extract_best_match(search_results, transcript)

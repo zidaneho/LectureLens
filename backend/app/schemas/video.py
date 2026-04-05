@@ -38,6 +38,8 @@ class TwelveLabsData(BaseModel):
 
 class VideoResult(BaseModel):
     id: str
+    index_id: str
+    video_id: str
     video_url: str
     title: str
     twelve_labs_data: TwelveLabsData

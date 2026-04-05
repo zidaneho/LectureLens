@@ -45,6 +45,8 @@ def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = Non
             logger.error(f"TwelveLabs processing failed: {str(e)}")
             # Return mock data for now if TwelveLabs fails
             twelve_labs_data = {
+                "index_id": "mock_index",
+                "video_id": "mock_video",
                 "transcript": [
                     {"start": 0, "end": 10, "text": "Welcome to the lecture"},
                     {"start": 10, "end": 60, "text": "Today we will discuss important concepts"}
@@ -54,7 +56,7 @@ def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = Non
                 ]
             }
         
-        # Stage 3: Generate notes with Gemini
+        # Stage 3: Generate notes and extract resources with Gemini
         self.update_state(state="PROGRESS", meta={"stage": "generating_notes", "progress": 80})
         
         gemini_service = get_gemini_service()
@@ -62,12 +64,10 @@ def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = Non
             gemini_service.generate_lecture_notes(twelve_labs_data, title)
         )
         
-        # Extract resources using Browser Use
+        # Extract resources using research queries from Gemini
         research_queries = notes_result.get("research_queries", [])
-        logger.info(f"Extracting resources for: {research_queries}")
-        browser_service = get_browser_use_service()
         external_resources = asyncio.run(
-            browser_service.extract_resources(research_queries)
+            gemini_service.extract_resources(research_queries)
         )
         
         lecture_notes = {
@@ -80,6 +80,8 @@ def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = Non
             "id": task_id,
             "video_url": video_url,
             "title": title,
+            "index_id": twelve_labs_data.get("index_id"),
+            "video_id": twelve_labs_data.get("video_id"),
             "twelve_labs_data": twelve_labs_data,
             "lecture_notes": lecture_notes
         }
@@ -110,7 +112,12 @@ async def _index_and_get_video_data(video_url: str, title: str):
         logger.info(f"Extracting video data...")
         twelve_labs_data = await service.get_video_data(task_info)
         
-        return twelve_labs_data.model_dump()
+        # Include IDs in the data
+        result = twelve_labs_data.model_dump()
+        result["index_id"] = task_info.get("index_id")
+        result["video_id"] = task_info.get("video_id")
+        
+        return result
     
     finally:
         await service.close()

@@ -31,9 +31,10 @@ class BrowserUseService:
             return self._mock_video_search(prompt)
 
         search_instruction = f"""
-        Go to YouTube and search for a high-quality educational lecture or podcast video that matches this prompt: "{prompt}".
-        Find the best video, click it to verify it's a real lecture or informative podcast, then extract:
-        1. The absolute YouTube video URL (e.g., https://www.youtube.com/watch?v=...)
+        Search for a high-quality educational lecture, academic video, or informative podcast that matches this prompt: "{prompt}".
+        You are not limited to YouTube; you can search on MIT OpenCourseWare, Coursera, academic university sites, or general educational platforms.
+        Find the best, most comprehensive video available, navigate to its page, and extract:
+        1. The absolute URL to the video or the page hosting it.
         2. The full title of the video.
         
         Return ONLY a JSON object with 'video_url' and 'title'. No markdown code blocks.
@@ -67,14 +68,13 @@ class BrowserUseService:
                 
                 logger.info(f"Cleaned Result for JSON parsing: {clean_result}")
                 
-                # Sometimes it might be just text containing the URL
-                if "youtube.com/watch?v=" in clean_result and "{" not in clean_result:
-                    # Attempt to find the URL
+                # Check for URLs if it's not strictly JSON
+                if "http" in clean_result and "{" not in clean_result:
                     import re
-                    match = re.search(r'https?://(?:www\.)?youtube\.com/watch\?v=[\w-]+', clean_result)
+                    match = re.search(r'https?://[^\s<>"]+|www\.[^\s<>"]+', clean_result)
                     if match:
                         found_url = match.group(0)
-                        logger.info(f"Extracted YouTube URL via regex: {found_url}")
+                        logger.info(f"Extracted URL via regex: {found_url}")
                         return {
                             "video_url": found_url,
                             "title": f"Lecture on {prompt}"
@@ -90,7 +90,7 @@ class BrowserUseService:
             except json.JSONDecodeError:
                 # If it's not JSON, it might just be the URL or contain it
                 import re
-                match = re.search(r'https?://(?:www\.)?youtube\.com/watch\?v=[\w-]+', final_result)
+                match = re.search(r'https?://[^\s<>"]+|www\.[^\s<>"]+', final_result)
                 if match:
                     return {
                         "video_url": match.group(0),
@@ -115,6 +115,7 @@ class BrowserUseService:
         for query in research_queries:
             instruction = f"""
             Search for high-quality academic or educational resources (papers, articles, exercises) for the topic: "{query}".
+            Start by using a general search engine like DuckDuckGo or Google, or go to academic repositories like arXiv or MIT OpenCourseWare.
             Find one excellent resource and extract:
             1. The title of the resource.
             2. The absolute URL to the resource.

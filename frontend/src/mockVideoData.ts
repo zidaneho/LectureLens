@@ -2,6 +2,8 @@ import type { VideoData } from './types';
 
 export const mockVideoData: VideoData = {
   id: "video-123",
+  index_id: "index-123",
+  video_id: "video-123-internal",
   title: "Introduction to Quantum Computing",
   video_url: "https://www.youtube.com/watch?v=k6U-i4gXJR8",
   twelve_labs_data: {

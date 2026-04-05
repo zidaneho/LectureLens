@@ -16,7 +16,9 @@ export type ExternalResource = {
 }
 
 export type VideoData = {
-  id: string;
+  id: string; // Task ID
+  index_id: string;
+  video_id: string;
   title: string;
   video_url: string;
   twelve_labs_data: {

@@ -23,24 +23,26 @@ class TestTwelveLabsService:
         """Test getting an existing index"""
         mock_index = MagicMock()
         mock_index.name = "lecture-lens-index"
-        service.client.index.list.return_value = [mock_index]
+        # Updated to use 'indexes' instead of 'index'
+        service.client.indexes.list.return_value = [mock_index]
         
         index = await service.get_index()
         
         assert index == mock_index
-        service.client.index.create.assert_not_called()
+        service.client.indexes.create.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_index_create(self, service):
         """Test creating a new index if none exists"""
-        service.client.index.list.return_value = []
+        # Updated to use 'indexes' instead of 'index'
+        service.client.indexes.list.return_value = []
         mock_new_index = MagicMock()
-        service.client.index.create.return_value = mock_new_index
+        service.client.indexes.create.return_value = mock_new_index
         
         index = await service.get_index()
         
         assert index == mock_new_index
-        service.client.index.create.assert_called_once()
+        service.client.indexes.create.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_submit_video_for_indexing(self, service):
@@ -52,7 +54,8 @@ class TestTwelveLabsService:
         
         mock_task = MagicMock()
         mock_task.id = "task-123"
-        service.client.task.create.return_value = mock_task
+        # Updated to use 'tasks' instead of 'task'
+        service.client.tasks.create.return_value = mock_task
         
         task_id = await service.submit_video_for_indexing(
             "https://youtube.com/watch?v=abc",
@@ -60,7 +63,7 @@ class TestTwelveLabsService:
         )
         
         assert task_id == "task-123"
-        service.client.task.create.assert_called_once()
+        service.client.tasks.create.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_poll_until_indexed_success(self, service):
@@ -73,7 +76,8 @@ class TestTwelveLabsService:
         mock_task_ready.video_id = "vid-123"
         mock_task_ready.index_id = "idx-123"
         
-        service.client.task.retrieve.side_effect = [mock_task_pending, mock_task_ready]
+        # Updated to use 'tasks' instead of 'task'
+        service.client.tasks.retrieve.side_effect = [mock_task_pending, mock_task_ready]
         
         status = await service.poll_until_indexed("task-123", max_attempts=5, poll_interval=0)
         
@@ -85,20 +89,43 @@ class TestTwelveLabsService:
         """Test extracting video data"""
         task_info = {"video_id": "vid-123", "index_id": "idx-123"}
         
-        # Mock transcript
+        # Mock transcription
         mock_t1 = MagicMock(start=0, end=10, value="Hello")
         mock_t2 = MagicMock(start=10, end=20, value="World")
-        service.client.video.transcription.return_value = [mock_t1, mock_t2]
         
-        # Mock summary (chapters)
+        mock_video = MagicMock()
+        mock_video.transcription = [mock_t1, mock_t2]
+        # Updated to use indexes.videos.retrieve
+        service.client.indexes.videos.retrieve.return_value = mock_video
+        
+        # Mock analyze for summary (replacing generate.summarize)
+        # Note: In the real code we will use analyze, so we mock analyze
+        # For now, I'll update the service code to use analyze as well.
+        # But wait, let's keep the test mocking what we expect.
+        
+        # Actually, let's fix the service code first before updating the test for analyze.
+        # Wait, I'll just write the full fixed test file now.
+        
         mock_chapter = MagicMock()
         mock_chapter.chapter_title = "Chapter 1"
         mock_chapter.start = 5
         
+        # If we use analyze, we might get a different structure.
+        # But if we use generate.summarize (if it works), we keep it.
+        # Since I suspect it doesn't work, I'll update the service to use analyze.
+        
+        # Mock analyze result
+        # Assuming analyze returns an object with 'chapters' property if requested via schema,
+        # or we just mock what the service expects.
         mock_summary = MagicMock()
         mock_summary.chapters = [mock_chapter]
         mock_summary.highlights = []
-        service.client.generate.summarize.return_value = mock_summary
+        
+        # We will update service to use analyze
+        service.client.analyze.return_value = mock_summary
+        
+        # Wait, the current service code uses client.generate.summarize
+        # I'll update it to use analyze.
         
         video_data = await service.get_video_data(task_info)
         

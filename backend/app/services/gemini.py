@@ -52,7 +52,9 @@ class GeminiService:
 
         Your tasks:
         1. Create well-structured markdown lecture notes from the perspective of a {persona}.
-           Use clear headings, bullet points, and emphasis where appropriate.
+           Use explicit Markdown headers (e.g., # For main title, ## for sections, ### for subsections).
+           Use bolding, bullet points, and blockquotes where appropriate to make it professional.
+           Ensure the 'markdown_content' field starts with a # Title.
         2. Identify 5-8 key topics covered in the video — topic transitions, important concepts, or
            pivotal explanations. For each, provide a short descriptive label (3-6 words) that can be
            used as a search query to locate that moment in the video. Choose topics spread across

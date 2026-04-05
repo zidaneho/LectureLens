@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import ChatComponent from '../components/ChatComponent';
 import type { VideoData } from '../types';
 
@@ -383,7 +384,7 @@ const AnalysisView: React.FC = () => {
                 exit={{ opacity: 0 }}
                 className="p-6 md:p-8 max-w-3xl mx-auto space-y-10"
               >
-                {!videoData.lecture_notes ? (
+                {!videoData.lecture_notes || !videoData.lecture_notes.markdown_content ? (
                   <div className="flex flex-col items-center justify-center py-20 space-y-4">
                     <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center bg-white/5">
                       <Loader2 className="w-5 h-5 text-white animate-spin" />
@@ -396,7 +397,7 @@ const AnalysisView: React.FC = () => {
                 ) : (
                   <>
                     <div className="prose prose-invert prose-neutral prose-sm max-w-none prose-h1:text-white prose-h2:text-white prose-strong:text-white prose-headings:tracking-tight">
-                      <ReactMarkdown>{videoData.lecture_notes.markdown_content}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{videoData.lecture_notes.markdown_content}</ReactMarkdown>
                     </div>
 
                     <div className="space-y-4 pt-8 border-t border-white/10">

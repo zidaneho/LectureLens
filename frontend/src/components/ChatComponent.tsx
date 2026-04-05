@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Send, Sparkles, User, Play, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import VoiceButton from './VoiceButton';
-import { useSettings } from '../SettingsContext';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
@@ -20,7 +19,6 @@ interface ChatComponentProps {
 }
 
 const ChatComponent: React.FC<ChatComponentProps> = ({ indexId, videoId, onSeek }) => {
-  const { preferences } = useSettings();
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [messages, setMessages] = useState<Message[]>([

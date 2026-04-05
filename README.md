@@ -29,7 +29,7 @@
 - **Embedded video player** — watch videos directly in the app with deep-link timestamp integration
 - **Text-to-speech** — listen to generated notes via ElevenLabs high-quality audio synthesis
 - **Multiple themes** — high-contrast dark and light modes supported through a dedicated Theme system
-- **Persistent Preferences** — custom API keys and learning preferences are stored per user for a tailored experience
+- **Secure Authentication** — user accounts, persistent preferences, and custom API keys are securely stored in MongoDB
 
 ---
 
@@ -40,7 +40,7 @@
 | **Frontend** | React 19, TypeScript, Vite, Tailwind CSS 4, Framer Motion |
 | **Backend** | FastAPI, Python, Pydantic |
 | **Task Queue** | Celery + Redis |
-| **Database** | MongoDB (async via Motor) |
+| **Database** | MongoDB (async via Motor) — stores user data, video cache, and history |
 | **Video Analysis** | TwelveLabs (Marengo 3.0 + Pegasus 1.2) |
 | **Note Generation** | Google Gemini (`gemini-1.5-flash`) |
 | **Video Search** | Browser Use + Playwright |

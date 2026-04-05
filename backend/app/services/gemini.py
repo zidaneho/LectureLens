@@ -11,8 +11,8 @@ class GeminiService:
             logger.warning("GOOGLE_API_KEY not set. Gemini integration will be mocked.")
             self.model = None
         else:
-            genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            genai.configure(api_key=api_key, transport="rest")
+            self.model = genai.GenerativeModel('gemini-flash-latest')
 
     async def generate_lecture_notes(self, twelve_labs_data: dict, title: str, persona: str = "Professor", summary_length: str = "medium") -> dict:
         """
@@ -24,9 +24,14 @@ class GeminiService:
         transcript = twelve_labs_data.get("transcript", [])
         key_concepts = twelve_labs_data.get("key_concepts", [])
 
-        # Format transcript and concepts for the prompt
+        # Cap transcript to ~500 segments to keep the prompt within Gemini's practical limits
+        MAX_SEGMENTS = 500
+        if len(transcript) > MAX_SEGMENTS:
+            step = len(transcript) // MAX_SEGMENTS
+            transcript = transcript[::step][:MAX_SEGMENTS]
+
+        # Format transcript for the prompt
         transcript_text = "\n".join([f"[{t['start']}-{t['end']}s]: {t['text']}" for t in transcript])
-        concepts_text = "\n".join([f"- {c['label']} at {c['timestamp']}s" for c in key_concepts])
 
         length_instruction = {
             "short": "concise and high-level (approx 300 words)",
@@ -36,49 +41,77 @@ class GeminiService:
 
         prompt = f"""
         You are an expert academic assistant acting as a {persona}.
-        Your goal is to transform raw video transcripts and metadata into high-quality, structured lecture notes.
-        
+        Your goal is to transform raw video transcripts into high-quality, structured lecture notes.
+
         The notes should be {length_instruction}.
-        
+
         Video Title: {title}
-        
-        Transcript segments:
+
+        Transcript segments (format: [start-end seconds]: text):
         {transcript_text}
-        
-        Key Concepts identified:
-        {concepts_text}
-        
-        Your task:
-        1. Create a well-structured markdown set of lecture notes from the perspective of a {persona}.
-        2. Use clear headings, bullet points, and emphasis where appropriate.
-        3. Include timestamps for key sections so the user can refer back to the video.
-        4. Synthesize the transcript into logical themes.
-        5. Identify 2-3 specific topics that would benefit from further research (supplementary resources).
-        
-        Format your response as a JSON object with the following structure:
+
+        Your tasks:
+        1. Create well-structured markdown lecture notes from the perspective of a {persona}.
+           Use clear headings, bullet points, and emphasis where appropriate.
+        2. Identify 5-8 key topics covered in the video — topic transitions, important concepts, or
+           pivotal explanations. For each, provide a short descriptive label (3-6 words) that can be
+           used as a search query to locate that moment in the video. Choose topics spread across
+           the full video.
+        3. Identify 2-3 specific topics that would benefit from further research.
+
+        Output MUST be a valid JSON object with exactly this structure:
         {{
             "markdown_content": "Full markdown lecture notes here...",
+            "key_topics": [
+                "Introduction and overview",
+                "Main algorithm explanation",
+                "Example walkthrough"
+            ],
             "research_queries": ["query 1", "query 2"]
         }}
         """
 
         try:
-            response = self.model.generate_content(prompt)
-            # Find the JSON part in the response (sometimes Gemini adds markdown code blocks)
-            text = response.text
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0].strip()
+            # Enforce JSON mode via generation_config
+            response = self.model.generate_content(
+                prompt,
+                generation_config={"response_mime_type": "application/json"}
+            )
+            
+            text = response.text.strip()
+            # Still handle potential markdown wrapping just in case
+            if text.startswith("```json"):
+                text = text.replace("```json", "", 1).rstrip("`").strip()
+            elif text.startswith("```"):
+                text = text.replace("```", "", 1).rstrip("`").strip()
             
             result = json.loads(text)
             return {
                 "markdown_content": result.get("markdown_content", ""),
+                "key_topics": result.get("key_topics", []),
                 "research_queries": result.get("research_queries", [])
             }
         except Exception as e:
             logger.error(f"Gemini note generation failed: {str(e)}")
-            return self._mock_notes(title)
+            # Fallback to a simpler prompt if JSON mode fails or if there's a parsing error
+            try:
+                logger.info("Retrying Gemini with simpler parameters...")
+                retry_response = self.model.generate_content(prompt + "\nIMPORTANT: Return ONLY the JSON object.")
+                retry_text = retry_response.text
+                if "```json" in retry_text:
+                    retry_text = retry_text.split("```json")[1].split("```")[0].strip()
+                elif "```" in retry_text:
+                    retry_text = retry_text.split("```")[1].split("```")[0].strip()
+                
+                result = json.loads(retry_text)
+                return {
+                    "markdown_content": result.get("markdown_content", ""),
+                    "key_topics": result.get("key_topics", []),
+                    "research_queries": result.get("research_queries", [])
+                }
+            except Exception as retry_e:
+                logger.error(f"Gemini retry failed: {str(retry_e)}")
+                return self._mock_notes(title)
 
     async def extract_resources(self, research_queries: list) -> list:
         """
@@ -99,7 +132,8 @@ class GeminiService:
     def _mock_notes(self, title: str) -> dict:
         return {
             "markdown_content": f"# {title}\n\n## Summary\nLecture notes generation is currently in mock mode because no API key was provided.\n\n## Key Takeaways\n- Placeholder note 1\n- Placeholder note 2",
-            "research_queries": [title]
+            "key_topics": [],
+            "research_queries": []
         }
 
 def get_gemini_service(api_key: str = None):

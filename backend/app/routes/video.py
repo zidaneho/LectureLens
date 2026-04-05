@@ -46,16 +46,21 @@ async def get_task_status(task_id: str):
             "status": "pending"
         }
     elif res.state == 'PROGRESS':
-        # Provide any intermediate data from the task info (meta)
+        info = res.info or {}
+        partial: dict = {}
+        for key in ("video_url", "title", "index_id", "video_id"):
+            if info.get(key):
+                partial[key] = info[key]
+        if info.get("key_concepts") is not None:
+            partial["twelve_labs_data"] = {"key_concepts": info["key_concepts"]}
+        if info.get("lecture_notes"):
+            partial["lecture_notes"] = info["lecture_notes"]
         return {
             "task_id": task_id,
             "status": "processing",
-            "stage": res.info.get('stage'),
-            "progress": res.info.get('progress'),
-            "result": {
-                "video_url": res.info.get("video_url"),
-                "title": res.info.get("title")
-            } if res.info.get("video_url") else None
+            "stage": info.get('stage'),
+            "progress": info.get('progress'),
+            "result": partial if partial.get("video_url") else None
         }
     elif res.state == 'SUCCESS':
         return {

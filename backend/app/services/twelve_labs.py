@@ -6,7 +6,6 @@ Uses the official twelvelabs-python SDK.
 from twelvelabs import TwelveLabs
 import asyncio
 import logging
-import httpx
 from typing import Optional, Dict, Any, List
 from app.core.config import settings
 from app.schemas.video import TranscriptSegment, KeyConcept, TwelveLabsData
@@ -18,11 +17,10 @@ class TwelveLabsService:
     
     def __init__(self, api_key: str = settings.TWELVE_LABS_API_KEY):
         self.api_key = api_key
-        self.client = TwelveLabs(api_key=self.api_key)
+        self.client = TwelveLabs(api_key=self.api_key) if self.api_key else None
         self.index_name = "lecture-lens-index-v5"
         self._index = None
         self._async_client = None
-        self.base_url = "https://api.twelvelabs.io/v1"
 
     async def get_index(self):
         """Get or create a default index for the project"""
@@ -67,17 +65,21 @@ class TwelveLabsService:
         import yt_dlp
         import tempfile
         import os
+        import uuid
 
         index = await self.get_index()
-        
+
         logger.info(f"Submitting video to index {index.id}: {video_url}")
-        
+
+        # Use a unique directory per download to avoid collisions when multiple
+        # workers process the same URL simultaneously.
+        tmp_dir = tempfile.mkdtemp(prefix=f"tl_{uuid.uuid4().hex}_")
         ydl_opts = {
             'format': 'best[ext=mp4]/best',
-            'outtmpl': os.path.join(tempfile.gettempdir(), '%(id)s.%(ext)s'),
+            'outtmpl': os.path.join(tmp_dir, '%(id)s.%(ext)s'),
             'quiet': True,
         }
-        
+
         file_path = None
         try:
             # Download video locally to avoid media_url_file_broken errors from signed/expiring URLs
@@ -104,6 +106,10 @@ class TwelveLabsService:
                     logger.info(f"Cleaned up temporary file {file_path}")
                 except OSError as e:
                     logger.error(f"Error removing temporary file: {e}")
+            try:
+                os.rmdir(tmp_dir)
+            except OSError:
+                pass
 
     async def poll_until_indexed(
         self,
@@ -157,96 +163,94 @@ class TwelveLabsService:
             ) for t in transcript_data
         ]
         
-        # Get summary/chapters for key concepts
-        logger.info(f"Generating summary for video {video_id} using analyze")
-        # In v1.3, we use analyze or analyze_async for generation tasks
-        # We'll use analyze with a prompt to get chapters
-        try:
-            summary_response = self.client.analyze(
-                video_id=video_id,
-                prompt="Summarize this video into chapters with titles and timestamps",
-            )
-            # For now, we'll assume the response might need parsing or has a structure
-            # based on how analyze is implemented in the SDK.
-            # In a real scenario, we would use response_format for structured JSON.
-            summary = summary_response
-        except Exception as e:
-            logger.error(f"Error generating summary: {e}")
-            summary = None
-        
+        # Key concepts are derived by Gemini during note generation — return empty for now
         key_concepts = []
-        if summary and hasattr(summary, 'chapters') and summary.chapters:
-            for chapter in summary.chapters:
-                key_concepts.append(KeyConcept(
-                    label=getattr(chapter, 'chapter_title', 'Key Moment'),
-                    timestamp=getattr(chapter, 'start', 0)
-                ))
-        elif hasattr(summary, 'highlights') and summary.highlights:
-             for highlight in summary.highlights:
-                key_concepts.append(KeyConcept(
-                    label=getattr(highlight, 'highlight_summary', 'Highlight'),
-                    timestamp=getattr(highlight, 'start', 0)
-                ))
-        
-        # Fallback if no chapters or highlights
-        if not key_concepts:
-            key_concepts.append(KeyConcept(
-                label="Main Overview",
-                timestamp=0
-            ))
 
         return TwelveLabsData(
             transcript=transcript_segments,
             key_concepts=key_concepts
         )
 
-    async def get_client(self) -> httpx.AsyncClient:
-        """Get or create async HTTP client for search"""
-        if self._async_client is None:
-            self._async_client = httpx.AsyncClient()
-        return self._async_client
-
     async def search_video(self, index_id: str, query: str, video_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Search a video index using TwelveLabs Search API.
-        
+        Search a video index using the TwelveLabs SDK.
+
         Args:
             index_id: TwelveLabs index ID
             query: Search query
             video_id: Optional video ID to filter results
-        
-        Returns: Dictionary with search results
+
+        Returns: Dictionary with a 'data' list of search result dicts
         """
-        client = await self.get_client()
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "query": query,
-            "index_id": index_id,
-            "search_options": ["visual", "conversation", "text_in_video"]
-        }
-        
-        if video_id:
-            payload["filters"] = [{"id": [video_id]}]
-        
+        if not self.api_key:
+            return {"data": []}
+
         try:
-            response = await client.post(
-                f"{self.base_url}/search",
-                json=payload,
-                headers=headers,
-                timeout=30.0
+            results = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: list(self.client.search.query(
+                    index_id=index_id,
+                    query_text=query,
+                    search_options=["visual", "audio", "transcription"],
+                ))
             )
-            
-            if response.status_code != 200:
-                raise Exception(f"Search API error: {response.text}")
-            
-            return response.json()
-        except httpx.RequestError as e:
+
+            if video_id:
+                results = [r for r in results if getattr(r, "video_id", None) == video_id]
+
+            data = [
+                {
+                    "start": getattr(r, "start", None),
+                    "end": getattr(r, "end", None),
+                    "text": getattr(r, "transcription", "") or "",
+                    "video_id": getattr(r, "video_id", None),
+                }
+                for r in results
+            ]
+            return {"data": data}
+        except Exception as e:
             raise Exception(f"Search request failed: {str(e)}")
+
+    async def generate_key_moments(
+        self,
+        index_id: str,
+        video_id: str,
+        topics: List[str]
+    ) -> List[Dict[str, Any]]:
+        """
+        Search the indexed video for each topic label and return key moments with timestamps.
+
+        For each topic, queries the TwelveLabs Search API and picks the top matching clip.
+        Returns a list of {"label": str, "timestamp": float} dicts, deduplicated by timestamp.
+        """
+        if not self.api_key or not topics:
+            return []
+
+        seen_timestamps: set = set()
+        key_moments: List[Dict[str, Any]] = []
+
+        for topic in topics:
+            try:
+                results = await self.search_video(index_id, topic, video_id=video_id)
+                data = results.get("data", [])
+                if not data:
+                    continue
+                best = data[0]
+                ts = best.get("start")
+                if ts is None:
+                    continue
+                # Round to nearest second to avoid near-duplicate timestamps
+                ts_rounded = round(float(ts))
+                if ts_rounded in seen_timestamps:
+                    continue
+                seen_timestamps.add(ts_rounded)
+                key_moments.append({"label": topic, "timestamp": float(ts)})
+            except Exception as e:
+                logger.warning(f"Search failed for topic '{topic}': {e}")
+
+        # Sort by timestamp so the frontend timeline is ordered
+        key_moments.sort(key=lambda m: m["timestamp"])
+        return key_moments
 
     async def close(self):
         """Close async client"""

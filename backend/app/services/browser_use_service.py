@@ -14,7 +14,7 @@ class BrowserUseService:
             self.llm = ChatBrowserUse(api_key=browser_use_api_key)
         elif google_api_key:
             logger.info("Using GOOGLE_API_KEY with ChatGoogleGenerativeAI.")
-            self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=google_api_key)
+            self.llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", google_api_key=google_api_key)
         else:
             logger.warning("Neither BROWSER_USE_API_KEY nor GOOGLE_API_KEY set. Browser Use will be mocked.")
             self.llm = None
@@ -169,10 +169,5 @@ class BrowserUseService:
             "title": f"Introduction to {prompt} (MIT OpenCourseWare)"
         }
 
-_service = None
-
 def get_browser_use_service():
-    global _service
-    if _service is None:
-        _service = BrowserUseService()
-    return _service
+    return BrowserUseService()

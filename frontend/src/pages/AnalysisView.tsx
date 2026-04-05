@@ -11,7 +11,7 @@ import type { VideoData } from '../types';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
-type Status = 'searching' | 'processing' | 'generating' | 'ready' | 'failed';
+type Status = 'searching' | 'processing' | 'generating' | 'searching_moments' | 'ready' | 'failed';
 
 const getEmbedUrl = (url: string) => {
   if (!url) return '';
@@ -31,6 +31,7 @@ const AnalysisView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'notes' | 'video'>('video');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
+  const [taskDone, setTaskDone] = useState(false);
   const [videoData, setVideoData] = useState<VideoData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
@@ -102,24 +103,27 @@ const AnalysisView: React.FC = () => {
     }
   }, [prompt, navigate]);
 
-  // Step 1: Initiate search
+  const searchInitiated = useRef(false);
+
+  // Step 1: Initiate search (once only)
   useEffect(() => {
+    if (!prompt || searchInitiated.current) return;
+    searchInitiated.current = true;
+
     const initiateSearch = async () => {
-      if (!prompt || videoData) return;
-      
       try {
         const token = localStorage.getItem('ll_token');
         const response = await fetch(`${API_BASE_URL}/search-video`, {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             'Authorization': token ? `Bearer ${token}` : ''
           },
           body: JSON.stringify({ prompt }),
         });
-        
+
         if (!response.ok) throw new Error('Failed to initiate search');
-        
+
         const data = await response.json();
         setTaskId(data.task_id);
       } catch (err: any) {
@@ -129,56 +133,57 @@ const AnalysisView: React.FC = () => {
     };
 
     initiateSearch();
-  }, [prompt, videoData]);
+  }, [prompt]);
 
-  // Step 2: Poll for status
+  // Step 2: Poll for status — continues until task is done, independent of display status
   useEffect(() => {
-    let interval: number;
-    
-    if (taskId && status !== 'ready' && status !== 'failed') {
-      interval = setInterval(async () => {
-        try {
-          const response = await fetch(`${API_BASE_URL}/task-status/${taskId}`);
-          if (!response.ok) throw new Error('Failed to fetch status');
-          
-          const data = await response.json();
-          
-          // Map backend stages to frontend status
-          if (data.stage === 'searching_video') setStatus('searching');
-          else if (data.stage === 'processing_video') setStatus('processing');
-          else if (data.stage === 'generating_notes') setStatus('generating');
-          
-          setProgress(data.progress || 0);
+    if (!taskId || taskDone) return;
 
-          // Update video data if available (even partially)
-          if (data.result) {
-            setVideoData(prev => ({
-              ...prev,
-              ...data.result
-            } as VideoData));
-          }
-          
-          if (data.status === 'completed') {
-            setVideoData(data.result);
-            setStatus('ready');
-            setTaskId(null);
-            clearInterval(interval);
-          } else if (data.status === 'failed') {
-            setError(data.message || 'Processing failed');
-            setStatus('failed');
-            setTaskId(null);
-            clearInterval(interval);
-          }
-        } catch (err: any) {
-          setError(err.message);
-          setStatus('failed');
-          clearInterval(interval);
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/task-status/${taskId}`);
+        if (!response.ok) throw new Error('Failed to fetch status');
+
+        const data = await response.json();
+
+        // Map backend stages to loading screen label
+        if (data.stage === 'searching_video') setStatus('searching');
+        else if (data.stage === 'processing_video') setStatus('processing');
+        else if (data.stage === 'generating_notes') setStatus('generating');
+        else if (data.stage === 'searching_moments') setStatus('searching_moments');
+
+        setProgress(data.progress || 0);
+
+        // Merge any partial result into videoData
+        if (data.result) {
+          setVideoData(prev => ({ ...prev, ...data.result } as VideoData));
         }
-      }, 1000);
-    }
-    
+
+        // Transition to the video page as soon as we have a URL + IDs
+        if (data.result?.video_url && data.result?.index_id) {
+          // If we're searching moments, don't set ready yet? No, we want the player to show up, 
+          // just with the moments loading. Ready = showing the page.
+          if (status !== 'failed') setStatus('ready');
+        }
+
+        if (data.status === 'completed') {
+          setVideoData(data.result);
+          setStatus('ready');
+          setTaskDone(true);
+        } else if (data.status === 'failed') {
+          setError(data.message || 'Processing failed');
+          setStatus('failed');
+          setTaskDone(true);
+        }
+      } catch (err: any) {
+        setError(err.message);
+        setStatus('failed');
+        setTaskDone(true);
+      }
+    }, 1000);
+
     return () => clearInterval(interval);
-  }, [taskId, status]);
+  }, [taskId, taskDone]);
 
   const handleSeek = (seconds: number) => {
     if (iframeRef.current && iframeRef.current.contentWindow) {
@@ -337,12 +342,14 @@ const AnalysisView: React.FC = () => {
                       <Clock className="w-3.5 h-3.5" />
                       Key Moments
                     </h2>
-                    {!videoData.twelve_labs_data ? (
+                    {(!videoData.twelve_labs_data || (!taskDone && videoData.twelve_labs_data.key_concepts.length === 0)) ? (
                       <div className="flex items-center gap-3 p-4 rounded-xl bg-neutral-900/30 border border-white/5 border-dashed">
                         <Loader2 className="w-4 h-4 text-neutral-700 animate-spin" />
-                        <span className="text-[11px] font-bold uppercase tracking-widest text-neutral-700">Indexing with TwelveLabs...</span>
+                        <span className="text-[11px] font-bold uppercase tracking-widest text-neutral-700">
+                          {!videoData.twelve_labs_data ? "Indexing with TwelveLabs..." : "Searching timestamps..."}
+                        </span>
                       </div>
-                    ) : (
+                    ) : videoData.twelve_labs_data.key_concepts.length > 0 ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {videoData.twelve_labs_data.key_concepts.map((concept, idx) => (
                           <button
@@ -359,6 +366,10 @@ const AnalysisView: React.FC = () => {
                             </div>
                           </button>
                         ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 rounded-xl bg-neutral-900/30 border border-white/5 border-dashed text-center">
+                         <span className="text-[11px] font-bold uppercase tracking-widest text-neutral-700">No key moments found</span>
                       </div>
                     )}
                   </div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Send, Sparkles, User, Play, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import VoiceButton from './VoiceButton';
+import { useSettings } from '../SettingsContext';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
@@ -19,21 +20,61 @@ interface ChatComponentProps {
 }
 
 const ChatComponent: React.FC<ChatComponentProps> = ({ indexId, videoId, onSeek }) => {
+  const { preferences } = useSettings();
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: "Hello! I'm preparing to analyze the video. Once indexing is complete, you can ask me anything about the content.",
+      text: "Hello! Ask me anything about the lecture or video content.",
       sender: 'ai'
     }
   ]);
 
-  const isReady = !!indexId && !!videoId;
+  const renderMessageText = (text: string) => {
+    // Regex to match [MM:SS] or [HH:MM:SS]
+    const timestampRegex = /\[(\d{1,2}:)?(\d{1,2}):(\d{2})\]/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = timestampRegex.exec(text)) !== null) {
+      // Add text before the match
+      if (match.index > lastIndex) {
+        parts.push(text.substring(lastIndex, match.index));
+      }
+
+      const tsStr = match[0];
+      const h = match[1] ? parseInt(match[1].replace(':', '')) : 0;
+      const m = parseInt(match[2]);
+      const s = parseInt(match[3]);
+      const totalSeconds = h * 3600 + m * 60 + s;
+
+      parts.push(
+        <button
+          key={match.index}
+          onClick={() => onSeek(totalSeconds)}
+          className="text-white font-bold hover:underline bg-white/10 px-1 rounded transition-all inline-flex items-center gap-1 mx-0.5"
+        >
+          <Play className="w-2 h-2 fill-white" />
+          {tsStr}
+        </button>
+      );
+
+      lastIndex = timestampRegex.lastIndex;
+    }
+
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+
+    return parts.length > 0 ? parts : text;
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isTyping || !isReady) return;
+    if (!input.trim() || isTyping) return;
 
     const userMsg: Message = { id: Date.now().toString(), text: input, sender: 'user' };
     setMessages(prev => [...prev, userMsg]);
@@ -41,14 +82,17 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ indexId, videoId, onSeek 
     setIsTyping(true);
 
     try {
+      const token = localStorage.getItem('ll_token');
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           index_id: indexId,
           video_id: videoId,
           message: input,
-          persona: 'default'
         }),
       });
 
@@ -102,7 +146,7 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ indexId, videoId, onSeek 
                 msg.sender === 'user' ? 'bg-neutral-900 text-neutral-300' : 'bg-black border border-white/10 text-neutral-200'
               }`}>
                 <div className="flex justify-between items-start gap-3">
-                  <div className="flex-1">{msg.text}</div>
+                  <div className="flex-1 whitespace-pre-wrap">{msg.sender === 'ai' ? renderMessageText(msg.text) : msg.text}</div>
                   <VoiceButton 
                     text={msg.text} 
                     autoPlay={msg.sender === 'ai' && msg.id === messages[messages.length - 1].id && !isTyping} 
@@ -143,14 +187,14 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ indexId, videoId, onSeek 
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isReady ? "Ask a question..." : "Indexing video..."}
-            disabled={isTyping || !isReady}
+            placeholder="Ask a question..."
+            disabled={isTyping}
             className="w-full bg-neutral-900/50 border border-white/10 rounded-xl px-4 py-3 pr-12 focus:ring-1 focus:ring-white/20 transition-all outline-none text-[13px] text-white placeholder:text-neutral-700 disabled:opacity-50"
           />
-          <button 
+          <button
             type="submit"
             className="absolute right-2 top-1/2 -translate-y-1/2 bg-white p-2 rounded-lg hover:bg-neutral-200 transition-all disabled:opacity-30"
-            disabled={!input.trim() || isTyping || !isReady}
+            disabled={!input.trim() || isTyping}
           >
             <Send className="w-3.5 h-3.5 text-black" />
           </button>

@@ -32,10 +32,9 @@ class BrowserUseService:
             return self._mock_video_search(prompt)
 
         search_instruction = f"""
-        Search for a high-quality educational lecture, academic video, or informative podcast that matches this prompt: "{prompt}".
-        You are not limited to YouTube; you can search on MIT OpenCourseWare, Coursera, academic university sites, or general educational platforms.
-        Find the best, most comprehensive video available, navigate to its page, and extract:
-        1. The absolute URL to the video or the page hosting it.
+        Search ONLY on YouTube for a high-quality educational lecture or academic video that matches this prompt: "{prompt}".
+        Find the best, most comprehensive YouTube video available, navigate to its page, and extract:
+        1. The absolute YouTube URL to the video.
         2. The full title of the video.
         
         Return ONLY a JSON object with 'video_url' and 'title'. No markdown code blocks.

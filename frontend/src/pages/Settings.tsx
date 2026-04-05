@@ -47,7 +47,7 @@ const Settings: React.FC = () => {
         setTheme(globalPrefs.theme);
       }
     }
-  }, [activeTab, globalPrefs, setTheme]);
+  }, [activeTab]); // Only run when activeTab changes
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -250,7 +250,9 @@ const Settings: React.FC = () => {
           <LayoutGroup id="settings-sidebar">
             <div className="space-y-1">
               {tabs.map((tab) => (
-                <SidebarItem key={tab.id} tab={tab} />
+                <React.Fragment key={tab.id}>
+                  {SidebarItem({ tab })}
+                </React.Fragment>
               ))}
             </div>
           </LayoutGroup>

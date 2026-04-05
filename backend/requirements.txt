@@ -19,3 +19,4 @@ elevenlabs
 passlib[bcrypt]
 python-jose[cryptography]
 python-multipart
+yt-dlp

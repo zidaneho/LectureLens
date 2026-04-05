@@ -146,7 +146,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     <div className="flex h-screen w-full bg-primary text-primary overflow-hidden font-sans">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-[240px] flex-col h-full shrink-0">
-        <SidebarContent />
+        {SidebarContent()}
       </aside>
 
       {/* Mobile Menu Overlay */}
@@ -176,7 +176,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                   <X className="w-6 h-6" />
                 </button>
               </div>
-              <SidebarContent />
+              {SidebarContent()}
             </motion.aside>
           </>
         )}

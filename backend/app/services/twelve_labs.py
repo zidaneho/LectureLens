@@ -64,30 +64,65 @@ class TwelveLabsService:
         
         Returns: task_id (not index_id, as we are using a shared index)
         """
+        import yt_dlp
+        import tempfile
+        import os
+
         index = await self.get_index()
         
         logger.info(f"Submitting video to index {index.id}: {video_url}")
-        task = self.client.tasks.create(
-            index_id=index.id,
-            url=video_url,
-            language=language
-        )
-        return task.id
+        
+        ydl_opts = {
+            'format': 'best[ext=mp4]/best',
+            'outtmpl': os.path.join(tempfile.gettempdir(), '%(id)s.%(ext)s'),
+            'quiet': True,
+        }
+        
+        file_path = None
+        try:
+            # Download video locally to avoid media_url_file_broken errors from signed/expiring URLs
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                logger.info(f"Downloading video from {video_url}...")
+                info = ydl.extract_info(video_url, download=True)
+                file_path = ydl.prepare_filename(info)
+            
+            logger.info(f"Downloaded video to {file_path}, uploading to TwelveLabs...")
+            with open(file_path, "rb") as f:
+                task = self.client.tasks.create(
+                    index_id=index.id,
+                    video_file=f
+                )
+            logger.info("Upload complete.")
+            return task.id
+        except Exception as e:
+            logger.error(f"Failed to submit video: {str(e)}")
+            raise e
+        finally:
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    logger.info(f"Cleaned up temporary file {file_path}")
+                except OSError as e:
+                    logger.error(f"Error removing temporary file: {e}")
 
     async def poll_until_indexed(
         self,
         task_id: str,
         max_attempts: int = 120,
-        poll_interval: int = 5
+        poll_interval: int = 5,
+        on_progress: Optional[callable] = None
     ) -> Dict[str, Any]:
         """
         Poll the TwelveLabs API until video indexing is complete.
         
         Returns: Task info
         """
-        for _ in range(max_attempts):
+        for i in range(max_attempts):
             task = self.client.tasks.retrieve(task_id)
             
+            if on_progress:
+                on_progress(task, i)
+
             if task.status == "ready":
                 return {
                     "status": "ready",

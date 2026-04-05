@@ -30,8 +30,19 @@ def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = Non
         # Stage 1: Search for video (Browser Use)
         self.update_state(state="PROGRESS", meta={"stage": "searching_video", "progress": 10})
 
+        import re
+        url_regex = re.compile(r'^(https?://|www\.)[^\s/$.?#].[^\s]*$', re.IGNORECASE)
+
+        prompt_clean = prompt.strip()
         if video_url and title:
             logger.info(f"Using provided video URL: {video_url}")
+        elif url_regex.match(prompt_clean):
+            video_url = prompt_clean
+            if video_url.lower().startswith('www.'):
+                video_url = 'https://' + video_url
+            title = "Video Link"
+            logger.info(f"Prompt is a direct URL, bypassing search: {video_url}")
+            self.update_state(state="PROGRESS", meta={"stage": "searching_video", "progress": 80})
         else:
             logger.info(f"Using Browser Use to search for: {prompt}")
             self.update_state(state="PROGRESS", meta={"stage": "searching_video", "progress": 30})
@@ -53,9 +64,20 @@ def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = Non
             "title": title
         })
         
+        def on_tl_progress(task, iteration):
+            # Calculate a virtual progress that moves slightly each polling cycle
+            # Stage 2 starts at 40, we can move it up towards 75
+            v_progress = 40 + min(iteration * 2, 35) 
+            self.update_state(state="PROGRESS", meta={
+                "stage": "processing_video", 
+                "progress": v_progress,
+                "video_url": video_url,
+                "title": title
+            })
+
         try:
             twelve_labs_data = asyncio.run(
-                _index_and_get_video_data(video_url, title, twelve_labs_api_key)
+                _index_and_get_video_data(video_url, title, twelve_labs_api_key, on_tl_progress)
             )
         except Exception as e:
             logger.error(f"TwelveLabs processing failed: {str(e)}")
@@ -88,11 +110,13 @@ def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = Non
         )
         
         # Extract resources using research queries from Gemini
+        self.update_state(state="PROGRESS", meta={"stage": "generating_notes", "progress": 92})
         research_queries = notes_result.get("research_queries", [])
         external_resources = asyncio.run(
             gemini_service.extract_resources(research_queries)
         )
         
+        self.update_state(state="PROGRESS", meta={"stage": "generating_notes", "progress": 98})
         lecture_notes = {
             "markdown_content": notes_result.get("markdown_content", ""),
             "external_resources": external_resources
@@ -114,7 +138,7 @@ def process_video_pipeline(self, task_id: str, prompt: str, video_url: str = Non
         raise
 
 
-async def _index_and_get_video_data(video_url: str, title: str, api_key: str = None):
+async def _index_and_get_video_data(video_url: str, title: str, api_key: str = None, on_progress: callable = None):
     """
     Index a video on TwelveLabs and extract transcript/concepts using the SDK.
     """
@@ -128,7 +152,7 @@ async def _index_and_get_video_data(video_url: str, title: str, api_key: str = N
         
         # Poll until indexing is complete
         logger.info(f"Polling TwelveLabs for indexing completion...")
-        task_info = await service.poll_until_indexed(task_id, max_attempts=120, poll_interval=5)
+        task_info = await service.poll_until_indexed(task_id, max_attempts=300, poll_interval=2, on_progress=on_progress)
         logger.info(f"Indexing complete for video: {task_info.get('video_id')}")
         
         # Extract transcript and key concepts

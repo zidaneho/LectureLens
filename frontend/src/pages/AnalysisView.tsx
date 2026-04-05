@@ -27,6 +27,7 @@ const AnalysisView: React.FC = () => {
   
   const [status, setStatus] = useState<Status>('searching');
   const [progress, setProgress] = useState(0);
+  const [displayProgress, setDisplayProgress] = useState(0);
   const [activeTab, setActiveTab] = useState<'notes' | 'video'>('video');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -34,29 +35,63 @@ const AnalysisView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
 
+  const displayProgressRef = useRef(0);
+  useEffect(() => {
+    displayProgressRef.current = displayProgress;
+  }, [displayProgress]);
+
   const loadingMessages = [
     "Initializing agent...",
     "Traversing the web...",
     "Finding best video...",
-    "Analyzing video content...",
-    "Extracting key concepts...",
-    "Structuring notes...",
+    "Evaluating sources...",
+    "Selecting lecture...",
+    "Verifying video quality...",
+    "Preparing lecture context...",
+    "Still searching...",
+    "Looking for the perfect match...",
     "Almost done..."
   ];
 
+  // Loading messages rotation
   useEffect(() => {
     if (!videoData?.video_url && status !== 'failed') {
       const interval = setInterval(() => {
         setLoadingMessageIndex(prev => {
-          if (prev < loadingMessages.length - 1) {
+          if (displayProgressRef.current >= 90) {
+            return loadingMessages.length - 1; // "Almost done..."
+          }
+          if (prev < loadingMessages.length - 2) {
             return prev + 1;
           }
-          return prev; // Stay on "Almost done..."
+          // Loop back to a middle message to keep it feeling active
+          return 2; 
         });
-      }, 3500);
+      }, 5000);
       return () => clearInterval(interval);
     }
-  }, [videoData?.video_url, status]);
+  }, [videoData?.video_url, status, loadingMessages.length]);
+
+  // Smooth progress animation and drift
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDisplayProgress(prev => {
+        if (prev < progress) {
+          // Catch up to backend progress
+          const diff = progress - prev;
+          const step = Math.max(diff * 0.1, 0.2);
+          return Math.min(prev + step, progress);
+        } else if (prev < 99 && status !== 'ready' && status !== 'failed') {
+          // Slow drift when waiting for backend
+          // The drift speed decreases slightly as we get closer to 100
+          const increment = Math.max(0.01, (100 - prev) / 1500);
+          return prev + increment;
+        }
+        return prev;
+      });
+    }, 50);
+    return () => clearInterval(interval);
+  }, [progress, status]);
   
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -139,7 +174,7 @@ const AnalysisView: React.FC = () => {
           setStatus('failed');
           clearInterval(interval);
         }
-      }, 2000);
+      }, 1000);
     }
     
     return () => clearInterval(interval);
@@ -204,8 +239,8 @@ const AnalysisView: React.FC = () => {
               <div className="flex-1 h-[1px] bg-neutral-900 relative">
                 <motion.div
                   initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.5 }}
+                  animate={{ width: `${displayProgress}%` }}
+                  transition={{ type: "tween", duration: 0.1, ease: "linear" }}
                   className="absolute inset-0 bg-white"
                 />
               </div>

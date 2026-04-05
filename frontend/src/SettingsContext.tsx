@@ -91,25 +91,27 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
       setPreferences(prev => {
         if (!prev) return null;
+        if (prev[key] === value) return prev; // Prevent unnecessary reference changes
+        
+        pendingChangesRef.current[key] = value;
+        setHasUnsavedChanges(true);
+
+        try {
+          const cached = localStorage.getItem('ll_user_profile');
+          if (cached) {
+            const profile: UserProfile = JSON.parse(cached);
+            profile.preferences[key] = value;
+            localStorage.setItem('ll_user_profile', JSON.stringify(profile));
+          }
+        } catch (e) {
+          console.error('Failed to update localStorage cache', e);
+        }
+
         return {
           ...prev,
           [key]: value
         };
       });
-
-      pendingChangesRef.current[key] = value;
-      setHasUnsavedChanges(true);
-
-      try {
-        const cached = localStorage.getItem('ll_user_profile');
-        if (cached) {
-          const profile: UserProfile = JSON.parse(cached);
-          profile.preferences[key] = value;
-          localStorage.setItem('ll_user_profile', JSON.stringify(profile));
-        }
-      } catch (e) {
-        console.error('Failed to update localStorage cache', e);
-      }
     },
     []
   );

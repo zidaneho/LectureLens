@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useSettings } from './SettingsContext';
 
 type Theme = 'dark_high' | 'dark_low' | 'light_high';
@@ -24,10 +24,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [preferences?.theme]);
 
-  const setTheme = (newTheme: Theme) => {
+  const setTheme = useCallback((newTheme: Theme) => {
     setThemeState(newTheme);
     updatePreference('theme', newTheme);
-  };
+  }, [updatePreference]);
 
   useEffect(() => {
     const root = window.document.documentElement;

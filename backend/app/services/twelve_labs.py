@@ -31,23 +31,24 @@ class TwelveLabsService:
         
         indexes = self.client.indexes.list()
         for idx in indexes:
-            if idx.name == self.index_name:
+            if idx.index_name == self.index_name:
                 self._index = idx
                 return idx
         
         # Create new index if not found
         logger.info(f"Creating new TwelveLabs index: {self.index_name}")
+        from twelvelabs.indexes import IndexesCreateRequestModelsItem
         self._index = self.client.indexes.create(
-            name=self.index_name,
-            engines=[
-                {
-                    "engine_name": "marengo2.6",
-                    "engine_options": ["visual", "conversation", "text_in_video", "logo"]
-                },
-                {
-                    "engine_name": "pegasus1.1",
-                    "engine_options": ["visual", "conversation"]
-                }
+            index_name=self.index_name,
+            models=[
+                IndexesCreateRequestModelsItem(
+                    model_name="marengo2.6",
+                    model_options=["visual", "conversation", "text_in_video", "logo"]
+                ),
+                IndexesCreateRequestModelsItem(
+                    model_name="pegasus1.1",
+                    model_options=["visual", "conversation"]
+                )
             ]
         )
         return self._index

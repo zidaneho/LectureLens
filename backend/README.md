@@ -111,3 +111,5 @@ pytest tests/test_chat.py -v
 - `requirements.txt`: Python dependencies.
 - `tests/`: Test suite with full coverage.
     - `test_chat.py`: Chat endpoint and service tests (20 tests, Task B5)
+
+# LIVE AT: lecturelens.tech

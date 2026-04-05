@@ -16,23 +16,23 @@ const AnalysisView: React.FC = () => {
   const location = useLocation();
   const prompt = location.state?.prompt || 'Loading...';
   const [status, setStatus] = useState<Status>('searching');
-  const [progress, setProgress] = useState(10);
   const [activeTab, setActiveTab] = useState<'notes' | 'video'>('video');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const playerRef = useRef<any>(null);
 
   useEffect(() => {
+    let progressValue = 10;
     const timer = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(timer);
-          setStatus('ready');
-          return 100;
-        }
-        if (prev > 70) setStatus('generating');
-        else if (prev > 30) setStatus('processing');
-        return prev + Math.random() * 10;
-      });
+      progressValue += Math.random() * 10;
+      
+      if (progressValue >= 100) {
+        clearInterval(timer);
+        setStatus('ready');
+      } else if (progressValue > 70) {
+        setStatus('generating');
+      } else if (progressValue > 30) {
+        setStatus('processing');
+      }
     }, 500);
 
     return () => clearInterval(timer);
